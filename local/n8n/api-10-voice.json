@@ -1,0 +1,290 @@
+{
+  "_export": {
+    "workflowId": "ZJQRxPRCyMi6Nszd",
+    "active": true,
+    "exportedAt": "2026-10-02T20:53:38Z",
+    "note": "Secrets replaced with __PLACEHOLDERS__. See README."
+  },
+  "name": "ChatDesk API-10 AI Settings",
+  "nodes": [
+    {
+      "id": "261f236b-5256-428d-9724-46b883ca0680",
+      "name": "Webhook Voice",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api-voice",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "bf41ff75-4a8a-4478-b4f9-467b6bfe0357"
+    },
+    {
+      "id": "2abb5dda-1fe1-44e7-8295-f63cd7a22a7c",
+      "name": "Build SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const b = $input.first().json.body || $input.first().json || {};\nconst op = (b.op || 'get').toString();\nif (!['get', 'set'].includes(op)) throw new Error('unknown op');\nconst ALLOW = { 'llm.qa': ['gemini', 'qwen3:4b'], 'tts.engine': ['auto', 'neural', 'piper'], 'ocr.engine': ['gemini', 'easyocr'] };\nlet sql = '';\nlet key = '';\nlet v = '';\nlet setkey = false;\nif (op === 'get') {\n  sql = `SELECT key, value FROM app_settings WHERE key IN ('llm.qa', 'tts.engine', 'ocr.engine', 'voice.llm_model', 'gemini.api_key')`;\n} else {\n  key = (b.key || '').toString();\n  v = (b.value || '').toString();\n  if (!key && b.model !== undefined) { key = 'llm.qa'; v = b.model.toString(); }\n  if (key === 'n8n.api_key') throw new Error('forbidden');\n  if (key === 'gemini.api_key') {\n    if (!/^[A-Za-z0-9._-]{20,500}$/.test(v)) throw new Error('รูปแบบ API key ไม่ถูกต้อง (20-500 ตัวอักษร: A-Z a-z 0-9 . _ -)');\n    setkey = true;\n  } else {\n    if (!ALLOW[key]) throw new Error('unknown key');\n    if (!ALLOW[key].includes(v)) throw new Error('unknown value');\n  }\n  const q = (s) => s.replace(/'/g, \"''\");\n  sql = `INSERT INTO app_settings (key, value, updated_at) VALUES ('${key}', '${q(v)}', NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW() RETURNING value`;\n}\nreturn [{ json: { op: op, key: key, v: v, setkey: setkey, sql: sql } }];"
+      }
+    },
+    {
+      "id": "f35a7a12-1ced-427c-84db-44f0a1394bb5",
+      "name": "Run SQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        640,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "c686bc7d-4951-4dd0-bdc8-e909cba45c98",
+      "name": "IF Key Rotation?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        800,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "5840c8fb-3278-48c9-bf62-e9eae5614a0f",
+              "leftValue": "={{ ($('Build SQL').first().json.setkey === true) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "42bc22d2-3352-4bd6-9d8d-37b9fbb7a46f",
+      "name": "Get N8N API Key",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        960,
+        180
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT value FROM app_settings WHERE key = 'n8n.api_key'",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "d9a80b23-a045-4bca-b327-2ede0f656048",
+      "name": "Rotate Gemini Credential",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1140,
+        180
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "http://host.docker.internal:5678/api/v1/credentials/VuE8YX5cbPUw7Ay8",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"name\": \"Google Gemini(PaLM) Api account\", \"data\": {\"host\": \"https://generativelanguage.googleapis.com\", \"apiKey\": {{ $('Build SQL').first().json.v.toJsonString() }}}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-N8N-API-KEY",
+              "value": "={{ $('Get N8N API Key').first().json.value }}"
+            }
+          ]
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "abd65922-27b3-490c-85b5-43078e7a500b",
+      "name": "Shape Key Rotation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        180
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const it = $input.first().json;\nconst t = $('Build SQL').first().json;\nconst ok = !(it && it.error);\nconst raw = (t.v || '').toString();\nconst mask = raw.length >= 8 ? (raw.slice(0, 4) + '••••••' + raw.slice(-3)) : '';\nif (!ok) {\n  const em = ((it.error && (it.error.message || it.error.description)) || it.error || 'unknown').toString().slice(0, 300);\n  return [{ json: { ok: false, key: 'gemini.api_key', value: mask, credential_updated: false, error: 'บันทึก key แล้ว แต่หมุน credential ไม่สำเร็จ: ' + em + ' — กดบันทึกซ้ำได้' } }];\n}\nreturn [{ json: { ok: true, key: 'gemini.api_key', value: mask, credential_updated: true } }];"
+      }
+    },
+    {
+      "id": "c0a0539b-1937-4f6a-a838-b069b9ea2ff0",
+      "name": "Shape",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        420
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const t = $('Build SQL').first().json;\nconst ALLOW = { 'llm.qa': ['gemini', 'qwen3:4b'], 'tts.engine': ['auto', 'neural', 'piper'], 'ocr.engine': ['gemini', 'easyocr'] };\nconst rows = $input.all().map(r => r.json);\nif (t.op === 'set') {\n  const v = rows.length && rows[0].value !== undefined ? rows[0].value : '';\n  return [{ json: { ok: true, key: t.key, value: v } }];\n}\nconst m = {};\nrows.forEach(r => { m[r.key] = r.value; });\nlet qa = m['llm.qa'] || m['voice.llm_model'] || 'gemini';\nif (!ALLOW['llm.qa'].includes(qa)) qa = 'gemini';\nlet te = m['tts.engine'] || 'auto';\nif (!ALLOW['tts.engine'].includes(te)) te = 'auto';\nlet oe = m['ocr.engine'] || 'gemini';\nif (!ALLOW['ocr.engine'].includes(oe)) oe = 'gemini';\nlet gk = (m['gemini.api_key'] || '').toString();\nlet gmask = gk.length >= 8 ? (gk.slice(0, 4) + '••••••' + gk.slice(-3)) : '';\nreturn [{ json: { ok: true, settings: { 'llm.qa': qa, 'tts.engine': te, 'ocr.engine': oe, 'gemini.api_key_masked': gmask }, model: qa, models: ['gemini', 'qwen3:4b'] } }];"
+      }
+    },
+    {
+      "id": "2e1ba9dc-141a-44d7-aa79-b866fcdad480",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1060,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Voice": {
+      "main": [
+        [
+          {
+            "node": "Build SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build SQL": {
+      "main": [
+        [
+          {
+            "node": "Run SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run SQL": {
+      "main": [
+        [
+          {
+            "node": "IF Key Rotation?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Key Rotation?": {
+      "main": [
+        [
+          {
+            "node": "Get N8N API Key",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Shape",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get N8N API Key": {
+      "main": [
+        [
+          {
+            "node": "Rotate Gemini Credential",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rotate Gemini Credential": {
+      "main": [
+        [
+          {
+            "node": "Shape Key Rotation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Key Rotation": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

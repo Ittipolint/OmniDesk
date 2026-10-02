@@ -1,0 +1,156 @@
+{
+  "_export": {
+    "workflowId": "af6AkiMrcJupk8E5",
+    "active": true,
+    "exportedAt": "2026-10-02T20:53:37Z",
+    "note": "Secrets replaced with __PLACEHOLDERS__. See README."
+  },
+  "name": "ChatDesk API-02 STT (whisper)",
+  "nodes": [
+    {
+      "id": "bc497ba2-255d-46a9-8b02-66f93934676f",
+      "name": "Webhook STT",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api-stt",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "9a17e8ba-e262-42b8-8d4d-ac46c1980e65"
+    },
+    {
+      "id": "6e0abe8b-0062-44f2-8838-45ccc3c6f182",
+      "name": "Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const inp = $input.first();\nconst b = inp.json.body || inp.json || {};\nconst bin = inp.binary || {};\nconst f = bin.audio || bin.file || bin.data || Object.values(bin)[0];\nconst userId = (b.userId || '').toString();\nif (!/^WEB_[A-Za-z0-9_-]{1,64}$/.test(userId)) throw new Error('userId ไม่ถูกต้อง');\nif (!f) throw new Error('ไม่พบไฟล์เสียง (field audio)');\n// ส่ง binary object เดิมทั้งก้อน (ห้ามสร้างใหม่ — reference จะขาดแล้วได้ไฟล์ศูนย์)\nreturn [{ json: { userId: userId }, binary: inp.binary }];"
+      }
+    },
+    {
+      "id": "8f05e367-0f02-40e9-b35a-db0a6c0d76e3",
+      "name": "Whisper ASR",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        640,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8080/asr?task=transcribe&language=th&output=json&vad_filter=true",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "audio_file",
+              "inputDataFieldName": "audio"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": false
+    },
+    {
+      "id": "d224c9d8-1d44-46b4-ab95-fc7e2cd54a94",
+      "name": "Shape Transcript",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const j = $input.first().json;\nconst t = ((j && j.text) || '').toString().trim().slice(0, 2000);\nif (!t) return [{ json: { ok: false, error: 'ไม่ได้ยินเสียงพูด (ลองพูดใกล้ไมค์และดังขึ้น)' } }];\nreturn [{ json: { ok: true, text: t } }];"
+      }
+    },
+    {
+      "id": "37135d06-00a5-4f5b-b8a2-a5bd8bf4aa74",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1060,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook STT": {
+      "main": [
+        [
+          {
+            "node": "Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate": {
+      "main": [
+        [
+          {
+            "node": "Whisper ASR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Whisper ASR": {
+      "main": [
+        [
+          {
+            "node": "Shape Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Transcript": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

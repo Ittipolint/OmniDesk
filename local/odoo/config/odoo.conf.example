@@ -1,0 +1,13 @@
+[options]
+# Copy to odoo.conf and fill in your own secrets (odoo.conf is git-ignored).
+admin_passwd = __ODOO_MASTER_PASSWORD__
+db_host = postgres-rag
+db_port = 5432
+db_user = raguser
+db_password = __POSTGRES_PASSWORD__
+dbfilter = ^odoo$
+addons_path = /mnt/extra-addons,/usr/lib/python3/dist-packages/odoo/addons
+data_dir = /var/lib/odoo
+without_demo = True
+workers = 0
+log_level = info

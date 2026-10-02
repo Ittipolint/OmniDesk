@@ -1,0 +1,61 @@
+{
+  "_export": {
+    "workflowId": "fwiCEZntw76jAw0E",
+    "active": true,
+    "exportedAt": "2026-10-02T20:53:38Z",
+    "note": "Secrets replaced with __PLACEHOLDERS__. See README."
+  },
+  "name": "ChatDesk FB Poller",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "poll-every-minute-id",
+      "name": "Poll Every Minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const PAGE_ID = '1344374618757432';\nconst TOK = '__FB_PAGE_TOKEN__';\nconst G = 'https://graph.facebook.com/v26.0';\nconst LOCAL = 'http://host.docker.internal:5678/webhook/chatdesk-fb';\nconst st = $getWorkflowStaticData('global');\nconst now = Date.now();\nif (!st.lastCheck) st.lastCheck = now - 15*60*1000;\nif (!Array.isArray(st.seen)) st.seen = [];\nconst seen = new Set(st.seen);\nconst since = st.lastCheck;\nconst injected = [];\nconst th = await this.helpers.httpRequest({method:'GET',\n  url: G + '/me/conversations?fields=id,updated_time,message_count&limit=20&access_token=' + TOK,\n  json:true, timeout:30000});\nfor (const t of (th.data || [])) {\n  let m;\n  try {\n    m = await this.helpers.httpRequest({method:'GET',\n      url: G + '/' + t.id + '/messages?fields=id,message,from,created_time&limit=15&access_token=' + TOK,\n      json:true, timeout:30000});\n  } catch(e) { continue; }\n  const msgs = (m.data || []).slice().sort((a,b) => new Date(a.created_time) - new Date(b.created_time));\n  for (const g of msgs) {\n    const ts = new Date(g.created_time).getTime();\n    const mid = g.id || '';\n    const fromId = (g.from && g.from.id) || '';\n    const text = (g.message || '').toString().trim();\n    if (!mid || !text || fromId === PAGE_ID) continue;\n    if (ts <= since || seen.has(mid)) continue;\n    const body = {object:'page', entry:[{id: PAGE_ID, time: Math.floor(ts/1000),\n      messaging:[{sender:{id:fromId}, recipient:{id:PAGE_ID}, timestamp: ts,\n        message:{mid: mid, text: text}}]}]};\n    await this.helpers.httpRequest({method:'POST', url: LOCAL, json:true, timeout:30000, body});\n    seen.add(mid); injected.push(mid);\n  }\n}\nst.seen = Array.from(seen).slice(-300);\nst.lastCheck = now;\nreturn [{json:{ok:true, injected: injected.length, mids: injected}}];"
+      },
+      "id": "worker-id",
+      "name": "Fetch Inject",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Poll Every Minute": {
+      "main": [
+        [
+          {
+            "node": "Fetch Inject",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

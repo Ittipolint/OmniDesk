@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <!-- ส่งข้อความพนักงาน (Send message บน Lead) กลับไปห้องแชทผ่าน n8n ทันที
+       ใช้ native webhook state (Python code โดน sandbox ห้าม import) + ดึงข้อมูลจริงผ่าน endpoint -->
+  <record id="action_chat_reply_send" model="ir.actions.server">
+    <field name="name">ChatDesk: forward staff reply to chat</field>
+    <field name="model_id" ref="mail.model_mail_message"/>
+    <field name="state">webhook</field>
+    <field name="webhook_url">http://n8n-local:5678/webhook/api-odoo-outbox</field>
+  </record>
+
+  <record id="automation_chat_reply" model="base.automation">
+    <field name="name">ChatDesk: staff reply to chat</field>
+    <field name="model_id" ref="mail.model_mail_message"/>
+    <field name="trigger">on_create_or_write</field>
+    <field name="filter_domain">[("model", "=", "crm.lead"), ("message_type", "=", "comment")]</field>
+    <field name="action_server_ids" eval="[(4, ref('action_chat_reply_send'))]"/>
+    <field name="active" eval="True"/>
+  </record>
+</odoo>

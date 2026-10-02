@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ShopDee • ช้อปออนไลน์ ส่งไวทั่วไทย</title>
+<meta name="description" content="ShopDee ร้านค้าออนไลน์เดโม: สินค้า 100+ รายการ พร้อมแชทบอทและสั่งด้วยเสียง">
+<link rel="icon" href="../chatdesk/assets/omnidesk-icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css?v=5">
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap top-in">
+    <a class="logo" href="#" onclick="goHome(event)">🛍️ Shop<span>Dee</span></a>
+    <div class="search">
+      <input id="q" placeholder="ค้นหาสินค้า ร้านค้า…" onkeydown="if(event.key==='Enter')doSearch()">
+      <button onclick="doSearch()">🔍</button>
+    </div>
+    <button class="icon-btn" onclick="toggleChat(true)" title="แชทกับบอท">💬</button>
+    <button class="icon-btn cart" onclick="openCart()" title="ตะกร้าสินค้า">🛒<span class="badge" id="cartBadge" hidden>0</span></button>
+  </div>
+  <div class="wrap cats" id="catBar"></div>
+</header>
+
+<main class="wrap">
+  <div class="toolbar">
+    <span id="resultInfo">สินค้าทั้งหมด</span>
+    <select id="sortBy" onchange="changeSort()">
+      <option value="pop">ยอดนิยม</option>
+      <option value="new">มาใหม่</option>
+      <option value="rating">คะแนนสูงสุด</option>
+      <option value="price_asc">ราคาต่ำ-สูง</option>
+      <option value="price_desc">ราคาสูง-ต่ำ</option>
+    </select>
+  </div>
+  <div class="grid" id="grid"></div>
+  <div class="more"><button id="moreBtn" class="btn ghost" onclick="loadMore()">ดูเพิ่มเติม</button></div>
+</main>
+
+<footer class="footer"><div class="wrap">
+  ShopDee • เว็บเดโมเพื่อการศึกษา (UX ล้อ Shopee) • สินค้า 100 รายการใน Postgres Local<br>
+  <small>ราคา/คะแนนเป็นข้อมูลจำลอง • รูปจาก picsum.photos • แชทบอทตอบจาก RAG กลุ่ม ShopDee-Profile</small><br>
+  <a href="#" onclick="openOrders(event)">📦 เช็คพัสดุของฉัน</a>
+</div></footer>
+
+<!-- ปุ่มแชทลอย -->
+<button class="fab" id="fabChat" onclick="toggleChat()">💬<span class="fab-dot" id="fabDot" hidden></span></button>
+
+<!-- แผงแชทบอท -->
+<div class="chat-panel" id="chatPanel" hidden>
+  <div class="chat-head">
+    <div><b>🤖 ShopDee ผู้ช่วย</b><br><small id="chatStatus">● ออนไลน์ • ตอบทันที</small></div>
+    <div>
+      <button class="mini" id="spkBtn" onclick="toggleSpk()" title="เปิด/ปิดเสียงอ่าน">🔇</button>
+      <button class="mini" onclick="toggleChat(false)">✖</button>
+    </div>
+  </div>
+  <div class="chat-body" id="chatBody"></div>
+  <div class="chips" id="quickChips"></div>
+  <div class="chat-in">
+    <button class="mini" id="micBtn" onclick="toggleMic()" title="แตะเพื่อพูด">🎤</button>
+    <input id="chatText" placeholder="ถามชื่อสินค้า ราคา โปร…" onkeydown="if(event.key==='Enter')sendChat()">
+    <button class="btn send" onclick="sendChat()">ส่ง ➤</button>
+  </div>
+</div>
+
+<!-- โมดัลสินค้า -->
+<div class="modal" id="pModal" hidden><div class="sheet">
+  <button class="x" onclick="closeModal('pModal')">✖</button>
+  <div id="pDetail"></div>
+</div></div>
+
+<!-- ตะกร้า -->
+<div class="drawer" id="cartDrawer" hidden><div class="drawer-in">
+  <div class="drawer-head"><b>🛒 ตะกร้าสินค้า</b><button class="mini" onclick="closeCart()">✖</button></div>
+  <div class="drawer-body" id="cartLines"></div>
+  <div class="drawer-foot" id="cartFoot"></div>
+</div></div>
+
+<!-- ชำระเงิน -->
+<div class="modal" id="coModal" hidden><div class="sheet">
+  <button class="x" onclick="closeModal('coModal')">✖</button>
+  <h3>🧾 สรุปคำสั่งซื้อ</h3>
+  <div id="coSummary"></div>
+  <label>ชื่อผู้รับ<input id="coName" placeholder="ชื่อ-สกุล"></label>
+  <label>เบอร์โทร<input id="coPhone" placeholder="08x-xxx-xxxx"></label>
+  <label>ที่อยู่<input id="coAddr" placeholder="บ้านเลขที่ ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"></label>
+  <label>หมายเหตุ<input id="coNote" placeholder="เช่น ฝากไว้หน้าบ้าน (ไม่บังคับ)"></label>
+  <label>โค้ดส่วนลด<input id="coCoupon" placeholder="เช่น SHOPDEE50 (ลด 50 เมื่อครบ 500)"></label>
+  <label>ชำระเงิน<br><select id="coPay"><option value="cod">เก็บเงินปลายทาง (COD)</option><option value="transfer">โอนธนาคาร</option></select></label>
+  <button class="btn buy" onclick="placeOrder()">ยืนยันสั่งซื้อ</button>
+  <div id="coMsg"></div>
+</div></div>
+
+<!-- เช็คพัสดุ -->
+<div class="modal" id="odModal" hidden><div class="sheet">
+  <button class="x" onclick="closeModal('odModal')">✖</button>
+  <h3>📦 เช็คพัสดุของฉัน</h3>
+  <div class="row"><input id="odPhone" placeholder="เบอร์โทรที่ใช้สั่งซื้อ"><button class="btn" onclick="findOrders()">ค้นหา</button></div>
+  <div id="odList"></div>
+</div></div>
+
+<div class="toast" id="toast" hidden></div>
+<script src="app.js?v=7"></script>
+</body>
+</html>

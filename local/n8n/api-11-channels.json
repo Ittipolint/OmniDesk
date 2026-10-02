@@ -1,0 +1,142 @@
+{
+  "_export": {
+    "workflowId": "5n4GtYDbhf3NPhgU",
+    "active": true,
+    "exportedAt": "2026-10-02T20:53:38Z",
+    "note": "Secrets replaced with __PLACEHOLDERS__. See README."
+  },
+  "name": "ChatDesk API-11 Channels (routing map)",
+  "nodes": [
+    {
+      "id": "96c8f0d4-f28a-4da7-b4f8-24b27f9401bf",
+      "name": "Webhook Channels",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api-channels",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "5ff5a849-612c-431b-b505-7c190264fe76"
+    },
+    {
+      "id": "872cfeff-3da3-4982-955e-e12540d58f5c",
+      "name": "Build SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const b = $input.first().json.body || $input.first().json || {};\nconst op = (b.op || 'list').toString();\nif (!['list', 'get', 'set', 'add', 'delete'].includes(op)) throw new Error('unknown op');\nconst q = (s) => (s || '').toString().replace(/'/g, \"''\");\nconst sel = `SELECT m.channel_code, m.label, COALESCE(m.persona_system, '') AS persona_system, COALESCE((SELECT json_agg(group_id ORDER BY group_id) FROM channel_rag_groups WHERE channel_code = m.channel_code), '[]') AS group_ids, m.line_bot_id, (m.line_channel_token IS NOT NULL AND m.line_channel_token <> '') AS has_token, m.is_active FROM channel_map m`;\nlet sql = '';\nif (op === 'list') {\n  sql = `SELECT COALESCE((SELECT json_agg(row_to_json(t)) FROM (${sel} ORDER BY m.channel_code) t), '[]') AS rows`;\n} else if (op === 'get') {\n  const code = (b.channel || b.channel_code || '').toString();\n  const bot = (b.line_bot_id || b.destination || '').toString();\n  if (bot) {\n    sql = `SELECT COALESCE((SELECT json_agg(row_to_json(t)) FROM (${sel} WHERE m.line_bot_id = '${q(bot)}') t), '[]') AS rows`;\n  } else {\n    if (!/^[a-z0-9_]{2,32}$/.test(code)) throw new Error('bad channel');\n    sql = `SELECT COALESCE((SELECT json_agg(row_to_json(t)) FROM (${sel} WHERE m.channel_code = '${code}') t), '[]') AS rows`;\n  }\n} else if (op === 'add') {\n  const code = (b.channel || b.channel_code || '').toString().toLowerCase();\n  if (!/^[a-z0-9_]{2,32}$/.test(code)) throw new Error('bad channel');\n  const label = q((b.label || '').toString().slice(0, 100));\n  const gids = (Array.isArray(b.group_ids) ? b.group_ids : (b.rag_group_id !== undefined ? [b.rag_group_id] : [])).map(function(x){ return parseInt(x); }).filter(function(x){ return x > 0; });\n  const bot = (b.line_bot_id || '').toString().trim();\n  const tok = (b.line_channel_token || '').toString().slice(0, 255);\n  const act = (b.is_active !== undefined && parseInt(b.is_active) === 0) ? 0 : 1;\n  const per = q((b.persona_system || b.persona || '').toString().slice(0, 4000));\n  sql = `SELECT * FROM cd_channel_add('${code}', '${label}', ARRAY[${gids.join(',')}]::int[], ${bot ? `'${q(bot.slice(0, 64))}'` : 'NULL'}, '${q(tok)}', ${act}, '${per}')`;\n} else if (op === 'delete') {\n  const code = (b.channel || b.channel_code || '').toString();\n  if (!/^[a-z0-9_]{2,32}$/.test(code)) throw new Error('bad channel');\n  sql = `SELECT * FROM cd_channel_del('${code}')`;\n} else if (op === 'set') {\n  const code = (b.channel || b.channel_code || '').toString();\n  if (!/^[a-z0-9_]{2,32}$/.test(code)) throw new Error('bad channel');\n  const has = function(k){ return b[k] !== undefined; };\n  const label = has('label') ? `'${q(b.label.toString().slice(0, 100))}'` : 'NULL';\n  const gids = has('group_ids') ? (Array.isArray(b.group_ids) ? b.group_ids : [b.group_ids]).map(function(x){ return parseInt(x); }).filter(function(x){ return x > 0; })\n    : (has('rag_group_id') && b.rag_group_id !== null && b.rag_group_id !== '' ? [parseInt(b.rag_group_id)].filter(function(x){ return x > 0; }) : null);\n  const gpart = (gids === null) ? 'NULL' : `ARRAY[${gids.join(',')}]::int[]`;\n  const bot = !has('line_bot_id') ? 'NULL' : ((b.line_bot_id || '').toString().trim() ? `'${q(b.line_bot_id.toString().trim().slice(0, 64))}'` : `''`);\n  const tok = !has('line_channel_token') ? 'NULL' : `'${q(b.line_channel_token.toString().slice(0, 255))}'`;\n  const act = !has('is_active') ? 'NULL' : ((parseInt(b.is_active) === 0) ? 0 : 1);\n  const per = !has('persona_system') && !has('persona') ? 'NULL' : `'${q(((b.persona_system !== undefined ? b.persona_system : b.persona) || '').toString().slice(0, 4000))}'`;\n  sql = `SELECT * FROM cd_channel_set('${code}', ${label}, ${gpart}, ${bot}, ${tok}, ${act}, ${per})`;\n}\nreturn [{ json: { op: op, sql: sql } }];"
+      }
+    },
+    {
+      "id": "32cb72fb-af9b-4915-b1b3-868a7a9348ff",
+      "name": "Run SQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        640,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "98549fba-d949-4f92-864d-5e19dce83365",
+      "name": "Shape",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const op = $('Build SQL').first().json.op || '';\nconst r0 = $input.first().json;\nif (op === 'set') {\n  const outs = $input.all().map(function(r){ return r.json; });\n  let n = parseInt(r0.updated) || 0;\n  for (const o of outs) { if (o && o.updated !== undefined && o.updated !== null) { n = parseInt(o.updated) || 0; break; } }\n  if (!n) return [{ json: { ok: false, error: 'ไม่พบช่องทางนี้' } }];\n  return [{ json: { ok: true, updated: n } }];\n}\nlet rows = r0.rows || [];\nif (typeof rows === 'string') { try { rows = JSON.parse(rows); } catch(e) { rows = []; } }\nif (op === 'add') {\n  const outs = $input.all().map(function(r){ return r.json; });\n  let added = null, aerr = '';\n  for (const o of outs) { if (o && o.added) { added = o.added; break; } if (o && o.err) { aerr = o.err; } }\n  if (!added) return [{ json: { ok: false, error: aerr || 'เพิ่มไม่สำเร็จ' } }];\n  return [{ json: { ok: true, channel_code: added } }];\n}\nif (op === 'delete') {\n  const outs = $input.all().map(function(r){ return r.json; });\n  let nd = 0;\n  for (const o of outs) { if (o && o.deleted !== undefined && o.deleted !== null) { nd = parseInt(o.deleted) || 0; break; } }\n  if (!nd) return [{ json: { ok: false, error: 'ไม่พบช่องทางนี้' } }];\n  return [{ json: { ok: true, deleted: nd } }];\n}\nif (op === 'get') {\n  const r = rows[0] || null;\n  if (!r) return [{ json: { ok: false, error: 'ไม่พบช่องทางนี้' } }];\n  r.is_active = parseInt(r.is_active) || 0;\n  r.rag_group_id = r.rag_group_id === null ? null : parseInt(r.rag_group_id);\n  return [{ json: { ok: true, channel: r } }];\n}\nreturn [{ json: { ok: true, channels: rows.map(r => ({ ...r, is_active: parseInt(r.is_active) || 0 })) } }];"
+      }
+    },
+    {
+      "id": "30e59efd-9ed4-48ed-a8c2-95995cccd47c",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1060,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Channels": {
+      "main": [
+        [
+          {
+            "node": "Build SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build SQL": {
+      "main": [
+        [
+          {
+            "node": "Run SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run SQL": {
+      "main": [
+        [
+          {
+            "node": "Shape",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

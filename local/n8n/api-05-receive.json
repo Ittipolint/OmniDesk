@@ -1,0 +1,142 @@
+{
+  "_export": {
+    "workflowId": "AH6wmgP25j8erHEB",
+    "active": true,
+    "exportedAt": "2026-10-02T20:53:37Z",
+    "note": "Secrets replaced with __PLACEHOLDERS__. See README."
+  },
+  "name": "ChatDesk API-05 Receive (chat send central)",
+  "nodes": [
+    {
+      "id": "a0f6fc2b-216c-49e2-a0b0-f354c3866d0f",
+      "name": "Webhook Receive",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api-receive",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "61a635b4-790c-4d62-b7e3-ba49c1bd1f39"
+    },
+    {
+      "id": "38db05f3-96ac-46ad-bb8e-04b6d7491fae",
+      "name": "Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const b = $input.first().json.body || $input.first().json || {};\nconst userId = (b.userId || b.externalUserId || b.user_id || '').toString().trim();\nif (!userId) throw new Error('ไม่พบ userId ของลูกค้า');\nconst keys = ['text', 'message', 'reply', 'content'];\nlet text = '';\nfor (const k of keys) {\n  if (b[k] !== undefined && b[k] !== null && String(b[k]).trim() !== '') { text = String(b[k]).trim(); break; }\n}\nconst type = ((b.messageType || b.message_type || 'text') + '').toLowerCase().replace(/[^a-z]/g, '') || 'text';\nif (!text && type === 'text') throw new Error('ไม่พบข้อความ');\nconst q = (s) => (s === undefined || s === null) ? null : String(s);\nconst sq = (s) => q(s) === null ? null : q(s).replace(/'/g, \"''\");\nconst ch = (b.channel || 'line').toString();\nconst channel = /^[a-z0-9_]{2,32}$/.test(ch) ? ch : 'line';\nconst sn = (b.sender || 'customer').toString();\nconst sender = ['customer', 'bot', 'agent', 'system'].includes(sn) ? sn : 'customer';\nconst disp = b.displayName || b.display_name || null;\nconst pic = b.pictureUrl || b.picture_url || null;\nconst med = b.mediaUrl || b.media_url || null;\nconst prv = b.mediaPreviewUrl || b.media_preview_url || null;\nconst spk = b.stickerPackage || b.sticker_package || null;\nconst sti = b.stickerId || b.sticker_id || null;\nconst mid = b.messageId || b.externalMessageId || b.external_message_id || null;\nconst Q = (v) => v === null ? 'NULL' : ` '${v}'`;\nconst NQ = (v, n) => v === null ? 'NULL' : `'${v.slice(0, n)}'`;\nconst sql = `SELECT * FROM cd_msg_in('${channel}', '${q(userId).replace(/'/g, \"''\")}', '${q(text.slice(0, 8000))}', '${sender}', ${Q(sq(disp ? String(disp).slice(0,150) : null))}, ${Q(sq(pic ? String(pic).slice(0,255) : null))}, '${type}', ${NQ(sq(med ? String(med) : null), 500)}, ${NQ(sq(prv ? String(prv) : null), 500)}, ${NQ(sq(spk ? String(spk) : null), 50)}, ${NQ(sq(sti ? String(sti) : null), 50)}, ${mid ? `'${q(String(mid).slice(0,64))}'` : 'NULL'});`;\nreturn [{ json: { sql: sql } }];"
+      }
+    },
+    {
+      "id": "c5d8e22f-fa43-4124-8f97-cedb2ad512f9",
+      "name": "Call cd_msg_in",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        640,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "85d6938b-bcdf-46f2-8d6a-d5555c042276",
+      "name": "Shape",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const r = $input.first().json;\nreturn [{ json: { ok: true, conversationId: r.conversation_id, messageId: r.message_id,\n  duplicate: !!r.duplicate, botEnabled: !!r.bot_enabled, displayName: r.display_name } }];"
+      }
+    },
+    {
+      "id": "36a5ec47-9dfd-42d3-b0e5-cd5cb9678d8a",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1060,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Receive": {
+      "main": [
+        [
+          {
+            "node": "Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate": {
+      "main": [
+        [
+          {
+            "node": "Call cd_msg_in",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call cd_msg_in": {
+      "main": [
+        [
+          {
+            "node": "Shape",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

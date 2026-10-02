@@ -1,0 +1,23 @@
+services:
+  web:
+    build: ./php
+    container_name: chatdesk-web
+    ports:
+      - "127.0.0.1:8081:80"
+    volumes:
+      - ./www:/var/www/html
+    environment:
+      - TZ=Asia/Bangkok
+    restart: unless-stopped
+
+  cf-web:
+    image: cloudflare/cloudflared:latest
+    container_name: chatdesk-cf-web
+    command: tunnel --no-autoupdate --url http://host.docker.internal:8081
+    restart: unless-stopped
+
+  cf-n8n:
+    image: cloudflare/cloudflared:latest
+    container_name: chatdesk-cf-n8n
+    command: tunnel --no-autoupdate --url http://host.docker.internal:5678
+    restart: unless-stopped

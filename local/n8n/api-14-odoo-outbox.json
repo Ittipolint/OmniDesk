@@ -1,0 +1,503 @@
+{
+  "_export": {
+    "workflowId": "nUZpu8XMaPsukBwa",
+    "active": true,
+    "exportedAt": "2026-10-02T20:53:38Z",
+    "note": "Secrets replaced with __PLACEHOLDERS__. See README."
+  },
+  "name": "ChatDesk API-14 Odoo Outbox (staff reply to chat)",
+  "nodes": [
+    {
+      "id": "f8daea90-d7a3-4c22-8836-7aba947db386",
+      "name": "Webhook Odoo Outbox",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api-odoo-outbox",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "a3e87e17-f73a-4461-984f-315a5a2f2085"
+    },
+    {
+      "id": "d3b6ea7c-c69d-4458-b512-0cc7a41f65ea",
+      "name": "Prep",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const b = $input.first().json.body || $input.first().json || {};\nconst mid = parseInt(b.message_id || b._id) || 0;\nif (!mid) throw new Error('need message_id');\nreturn [{ json: { message_id: mid } }];"
+      }
+    },
+    {
+      "id": "298b55fc-6d8c-41e3-846c-2e90199f3769",
+      "name": "Odoo Info",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        640,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://odoo:8069/chatdesk/outbox-info",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"token\": \"__ODOO_SHARED_TOKEN__\", \"message_id\": {{ $json.message_id }}}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "63862a52-cfda-46d0-a280-3e12c796c5d5",
+      "name": "Shape Job",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const r = $input.first().json;\nconst d = (r && r.result !== undefined) ? r.result : r;\nif (!d || d.ok !== true) return [{ json: { skip: true, reason: ((d && d.error) || 'not-a-reply').toString() } }];\nreturn [{ json: { skip: false, channel: d.channel, userId: d.external_user_id,\n  text: d.text, display_name: d.display_name || '', lead_id: d.lead_id || 0 } }];"
+      }
+    },
+    {
+      "id": "bb4f244f-7312-4504-b924-46657ef0dc20",
+      "name": "IF Job OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1080,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "e49a6903-020d-454d-88d7-a96939c16627",
+              "leftValue": "={{ !$json.skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "f64c2c29-802d-42ed-8559-9e32ffac6c6d",
+      "name": "Shape Skip",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        460
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{ json: { ok: true, skipped: true } }];"
+      }
+    },
+    {
+      "id": "ef7e5809-38d3-44f0-bd3f-c68015d53946",
+      "name": "Q Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        140
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const p = $('Shape Job').first().json;\nconst esc = (s) => (s || '').toString().replace(/'/g, \"''\");\nreturn [{ json: { sql: `SELECT COALESCE((SELECT line_channel_token FROM channel_map WHERE channel_code = '${esc(p.channel)}'), '') AS token` } }];"
+      }
+    },
+    {
+      "id": "46f3610b-ab8c-4194-b850-67233472f3ed",
+      "name": "Run Token",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1300,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "d296279d-e98e-496d-8dac-52bf5e0f77f2",
+      "name": "Shape Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const r = $input.first().json;\nreturn [{ json: { token: (r.token || '').toString() } }];"
+      }
+    },
+    {
+      "id": "ab4a165e-b323-4956-87e4-538bf6f8aaa6",
+      "name": "IF Has Token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1740,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "3cf4c6e3-de08-48d1-b530-5cc43d00f1a0",
+              "leftValue": "={{ !!$json.token }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "97822c16-0e0a-4957-9091-f922fa83f07e",
+      "name": "Push LINE",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1960,
+        160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.line.me/v2/bot/message/push",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$('Shape Token').first().json.token}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {to: $('Shape Job').first().json.userId, messages: [{type: 'text', text: $('Shape Job').first().json.text.slice(0, 2000)}]} } }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": false
+    },
+    {
+      "id": "ef489c62-9291-49ec-8c03-6d5fade8773d",
+      "name": "Save Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2180,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:5678/webhook/api-receive",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"userId\": {{ $('Shape Job').first().json.userId.toJsonString() }}, \"channel\": {{ $('Shape Job').first().json.channel.toJsonString() }}, \"text\": {{ $('Shape Job').first().json.text.toJsonString() }}, \"sender\": \"agent\", \"displayName\": {{ ($('Shape Job').first().json.display_name || 'เจ้าหน้าที่').toJsonString() }}}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "25553f01-c76c-4c35-9686-8695f0b020fd",
+      "name": "Build Mute SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const p = $('Shape Job').first().json;\nconst esc = (s) => (s || '').toString().replace(/'/g, \"''\");\nreturn [{ json: { sql: `UPDATE cd_conversations SET bot_enabled = 0 WHERE channel = '${esc(p.channel)}' AND external_user_id = '${esc(p.userId)}'` } }];"
+      }
+    },
+    {
+      "id": "86bdca92-e4f9-43f9-bdac-25fe32353daf",
+      "name": "Mute Bot",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        2620,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "ff8ef777-1467-40d6-adfb-bcfee79f4705",
+      "name": "Shape Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2840,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const p = $('Shape Job').first().json;\nlet pushed = false;\ntry {\n  const t = $('Shape Token').first().json;\n  pushed = !!(t && t.token);\n} catch(e) {}\nreturn [{ json: { ok: true, via: pushed ? 'line' : 'web', channel: p.channel } }];"
+      }
+    },
+    {
+      "id": "23283b77-ceaf-4596-8e85-592167a60e0f",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        3060,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Odoo Outbox": {
+      "main": [
+        [
+          {
+            "node": "Prep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep": {
+      "main": [
+        [
+          {
+            "node": "Odoo Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Odoo Info": {
+      "main": [
+        [
+          {
+            "node": "Shape Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Job": {
+      "main": [
+        [
+          {
+            "node": "IF Job OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Job OK?": {
+      "main": [
+        [
+          {
+            "node": "Q Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Shape Skip",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Skip": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Q Token": {
+      "main": [
+        [
+          {
+            "node": "Run Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Token": {
+      "main": [
+        [
+          {
+            "node": "Shape Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Token": {
+      "main": [
+        [
+          {
+            "node": "IF Has Token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Has Token?": {
+      "main": [
+        [
+          {
+            "node": "Push LINE",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Push LINE": {
+      "main": [
+        [
+          {
+            "node": "Save Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Agent": {
+      "main": [
+        [
+          {
+            "node": "Build Mute SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Mute SQL": {
+      "main": [
+        [
+          {
+            "node": "Mute Bot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mute Bot": {
+      "main": [
+        [
+          {
+            "node": "Shape Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Result": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

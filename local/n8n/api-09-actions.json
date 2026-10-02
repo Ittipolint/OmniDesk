@@ -1,0 +1,142 @@
+{
+  "_export": {
+    "workflowId": "aEBTIfxEZFOQAxLt",
+    "active": true,
+    "exportedAt": "2026-10-02T20:53:38Z",
+    "note": "Secrets replaced with __PLACEHOLDERS__. See README."
+  },
+  "name": "ChatDesk API-09 Actions (room ops)",
+  "nodes": [
+    {
+      "id": "a7055f9b-b16d-431f-a79d-de3229377d98",
+      "name": "Webhook Actions",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api-actions",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "8b5bcf74-5f51-4fa0-a82b-ffd9eae145d8"
+    },
+    {
+      "id": "38b1232a-0401-40ba-bed2-e5d7ef3a3651",
+      "name": "Build SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const b = $input.first().json.body || $input.first().json || {};\nconst op = (b.action || b.op || '').toString();\nif (!['bot_on', 'bot_off', 'close', 'reopen', 'mark_read', 'delete_message', 'delete'].includes(op)) throw new Error('unknown action');\nconst id = parseInt(b.conversationId || b.id) || 0;\nif (!id) throw new Error('missing conversation');\nconst mid = parseInt(b.messageId) || 0;\nif (op === 'delete_message' && !mid) throw new Error('missing message');\nlet sql = '';\nif (op === 'bot_on' || op === 'bot_off') {\n  const v = op === 'bot_on' ? 1 : 0;\n  const txt = op === 'bot_on' ? 'เปิดให้บอทตอบห้องนี้อีกครั้ง' : 'ปิดบอทห้องนี้ — พนักงานดูแลเอง';\n  sql = `WITH u AS (UPDATE cd_conversations SET bot_enabled = ${v} WHERE id = ${id} RETURNING 1), ins AS (INSERT INTO cd_messages (conversation_id, sender, content, message_type, status) SELECT ${id}, 'system', '${txt}', 'text', 'ok' WHERE EXISTS (SELECT 1 FROM u) RETURNING 1) SELECT EXISTS(SELECT 1 FROM cd_conversations WHERE id = ${id}) AS found`;\n} else if (op === 'close' || op === 'reopen') {\n  const st = op === 'close' ? 'closed' : 'open';\n  const txt = op === 'close' ? 'ปิดเคสนี้แล้ว' : 'เปิดเคสนี้ขึ้นมาใหม่';\n  const extra = op === 'close' ? ', unread_count = 0' : '';\n  sql = `WITH u AS (UPDATE cd_conversations SET status = '${st}'${extra} WHERE id = ${id} RETURNING 1), ins AS (INSERT INTO cd_messages (conversation_id, sender, content, message_type, status) SELECT ${id}, 'system', '${txt}', 'text', 'ok' WHERE EXISTS (SELECT 1 FROM u) RETURNING 1) SELECT EXISTS(SELECT 1 FROM cd_conversations WHERE id = ${id}) AS found`;\n} else if (op === 'mark_read') {\n  sql = `WITH a AS (UPDATE cd_conversations SET unread_count = 0 WHERE id = ${id} AND unread_count > 0 RETURNING 1), b AS (UPDATE cd_messages SET read_at = COALESCE(read_at, NOW()) WHERE conversation_id = ${id} AND sender = 'customer' AND read_at IS NULL RETURNING 1) SELECT EXISTS(SELECT 1 FROM cd_conversations WHERE id = ${id}) AS found`;\n} else if (op === 'delete_message') {\n  sql = `WITH d AS (DELETE FROM cd_messages WHERE id = ${mid} AND conversation_id = ${id} AND sender IN ('bot', 'agent') RETURNING 1) SELECT (SELECT COUNT(*) FROM d) AS deleted, EXISTS(SELECT 1 FROM cd_conversations WHERE id = ${id}) AS found`;\n} else if (op === 'delete') {\n  sql = `WITH d AS (DELETE FROM cd_conversations WHERE id = ${id} RETURNING 1) SELECT (SELECT COUNT(*) FROM d) AS deleted`;\n}\nreturn [{ json: { op: op, id: id, mid: mid, sql: sql } }];"
+      }
+    },
+    {
+      "id": "7e805529-253c-4710-acea-e1640cf8ca50",
+      "name": "Run SQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        640,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "de7d4395-af0d-4253-aceb-15f91b42ab4e",
+      "name": "Shape",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const t = $('Build SQL').first().json;\nconst op = t.op || '';\nconst r = $input.first().json;\nconst found = !(r.found === false || r.found === 0 || r.found === '0' || r.found === null || r.found === undefined);\nconst delN = parseInt(r.deleted) || 0;\nconst missing = { ok: false, error: 'ไม่พบห้องแชทนี้' };\nif (op === 'delete_message') {\n  if (!found && delN === 0) return [{ json: missing }];\n  if (delN === 0) return [{ json: { ok: false, error: 'ลบข้อความนี้ไม่ได้ (ลบได้เฉพาะข้อความของบอทหรือเจ้าหน้าที่)' } }];\n  return [{ json: { ok: true, deleted: true, messageId: t.mid, message: 'ลบข้อความแล้ว' } }];\n}\nif (op === 'delete') {\n  if (delN === 0) return [{ json: missing }];\n  return [{ json: { ok: true, deleted: true, message: 'ลบห้องแชทนี้แล้ว' } }];\n}\nif (!found) return [{ json: missing }];\nif (op === 'bot_on') return [{ json: { ok: true, botEnabled: true, message: 'บอทกลับมาตอบห้องนี้แล้ว' } }];\nif (op === 'bot_off') return [{ json: { ok: true, botEnabled: false, message: 'ปิดบอทแล้ว พนักงานดูแลเอง' } }];\nif (op === 'close') return [{ json: { ok: true, status: 'closed', message: 'ปิดเคสแล้ว' } }];\nif (op === 'reopen') return [{ json: { ok: true, status: 'open', message: 'เปิดเคสใหม่แล้ว' } }];\nreturn [{ json: { ok: true, message: 'ทำเครื่องหมายว่าอ่านแล้ว' } }];"
+      }
+    },
+    {
+      "id": "224c8437-988b-4fb5-ad27-f8e19625ff57",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1060,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Actions": {
+      "main": [
+        [
+          {
+            "node": "Build SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build SQL": {
+      "main": [
+        [
+          {
+            "node": "Run SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run SQL": {
+      "main": [
+        [
+          {
+            "node": "Shape",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

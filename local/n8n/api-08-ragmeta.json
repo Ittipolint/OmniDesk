@@ -1,0 +1,142 @@
+{
+  "_export": {
+    "workflowId": "gesxAirJO3NY4gQR",
+    "active": true,
+    "exportedAt": "2026-10-02T20:53:38Z",
+    "note": "Secrets replaced with __PLACEHOLDERS__. See README."
+  },
+  "name": "ChatDesk API-08 RAG Meta (groups+stats)",
+  "nodes": [
+    {
+      "id": "47dd3116-9158-473e-a05b-fe40e07d5704",
+      "name": "Webhook RAG Meta",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api-ragmeta",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "3c6318db-cfa8-4904-91b7-ba89dd05f29b"
+    },
+    {
+      "id": "5b2fc42d-9bc1-40b2-abe8-d2e5c3741d7e",
+      "name": "Build SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const b = $input.first().json.body || $input.first().json || {};\nconst op = (b.op || '').toString();\nconst q = (s) => (s || '').toString().replace(/'/g, \"''\");\nconst qi = (v) => { const n = parseInt(v); if (isNaN(n)) throw new Error('bad id'); return n; };\nlet sql = '';\nif (op === 'list') {\n  sql = `SELECT g.id, g.name, g.description, COUNT(c.id) AS chunks FROM rag_groups g LEFT JOIN rag_chunks c ON (c.metadata->>'group_id')::int = g.id GROUP BY g.id, g.name, g.description ORDER BY g.id;`;\n} else if (op === 'add') {\n  const nm = (b.name || '').toString().trim();\n  if (!/^[A-Za-z0-9_ก-ฮ-]{2,64}$/u.test(nm)) throw new Error('ชื่อกลุ่มไม่ถูกต้อง (A-Z a-z 0-9 _ - ก-ฮ ยาว 2-64)');\n  sql = `INSERT INTO rag_groups (name, description) VALUES ('${nm}', '${q((b.description || '').slice(0, 255))}');`;\n} else if (op === 'persona') {\n  const code = (b.channel || b.channel_code || '').toString();\n  if (!/^[a-z0-9_]{2,32}$/.test(code)) throw new Error('bad channel');\n  sql = `UPDATE channel_map SET persona_system = '${q((b.persona || '').slice(0, 4000))}' WHERE channel_code = '${code}'`;\n} else if (op === 'delete') {\n  sql = `DELETE FROM rag_groups WHERE id = ${qi(b.id)};`;\n} else if (op === 'listsources') {\n  sql = `SELECT s.id, s.group_id, s.source_type, COALESCE(s.title, '') AS title, COALESCE(s.source_ref, '') AS source_ref, COALESCE(s.image_url, '') AS image_url, s.created_at, (SELECT COUNT(*) FROM rag_chunks c WHERE c.source_id = s.id) AS chunks FROM rag_sources s WHERE s.group_id = ${qi(b.group_id)} ORDER BY s.id DESC;`;\n} else if (op === 'deletesource') {\n  sql = `WITH d AS (DELETE FROM rag_sources WHERE id = ${qi(b.id)} AND group_id = ${qi(b.group_id)} RETURNING image_url) SELECT (SELECT COUNT(*) FROM d) AS deleted, COALESCE((SELECT image_url FROM d), '') AS image_url;`;\n} else if (op === 'stats') {\n  sql = `SELECT (SELECT COUNT(*) FROM rag_sources) AS sources, (SELECT COUNT(*) FROM rag_chunks) AS chunks, (SELECT COUNT(*) FROM rag_sources WHERE source_type = 'image') AS images, (SELECT COALESCE(json_agg(json_build_object('name', g.name, 'chunks', (SELECT COUNT(*) FROM rag_chunks c WHERE (c.metadata->>'group_id')::int = g.id)) ORDER BY g.id), '[]') FROM rag_groups g) AS groups`;} else { throw new Error('unknown op'); }\nreturn [{ json: { sql: sql, op: op } }];"
+      }
+    },
+    {
+      "id": "97d24029-c553-4886-80f3-3d2402e1e4f3",
+      "name": "Run SQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        640,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "10333451-bda5-4dc9-826b-92d4fe14951d",
+      "name": "Shape",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const op = $('Build SQL').first().json.op || '';\nconst rows = $input.all().map(r => r.json);\nif (op === 'list') return [{ json: { ok: true, groups: rows.map(r => ({ ...r, chunks: parseInt(r.chunks) || 0 })) } }];\nif (op === 'listsources') return [{ json: { ok: true, sources: rows.map(r => ({ id: parseInt(r.id) || 0, group_id: parseInt(r.group_id) || 0, source_type: (r.source_type || '').toString(), title: (r.title || '').toString(), source_ref: (r.source_ref || '').toString(), image_url: (r.image_url || '').toString(), created_at: (r.created_at || '').toString(), chunks: parseInt(r.chunks) || 0 })) } }];\nif (op === 'deletesource') { const r = rows[0] || {}; return [{ json: { ok: true, deleted: (parseInt(r.deleted) || 0) > 0, image_url: (r.image_url || '').toString() } }]; }\nif (op === 'stats') {\n  const r = rows[0] || {};\n  const groups = Array.isArray(r.groups) ? r.groups : [];\n  return [{ json: { ok: true, sources: parseInt(r.sources) || 0, chunks: parseInt(r.chunks) || 0, images: parseInt(r.images) || 0,\n    groups: groups.map(g => ({ name: g.name, chunks: parseInt(g.chunks) || 0 })) } }];\n}\nreturn [{ json: { ok: true } }];"
+      }
+    },
+    {
+      "id": "1204902f-7c00-4410-8130-10059c613b76",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1080,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook RAG Meta": {
+      "main": [
+        [
+          {
+            "node": "Build SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build SQL": {
+      "main": [
+        [
+          {
+            "node": "Run SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run SQL": {
+      "main": [
+        [
+          {
+            "node": "Shape",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

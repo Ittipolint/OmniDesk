@@ -1,0 +1,1003 @@
+{
+  "_export": {
+    "workflowId": "w0VrqmlibOM9SldS",
+    "active": true,
+    "exportedAt": "2026-10-02T20:53:38Z",
+    "note": "Secrets replaced with __PLACEHOLDERS__. See README."
+  },
+  "name": "[LOCAL] ChatDesk Manager - FB",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET,POST",
+        "path": "chatdesk-fb",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1900,
+        40
+      ],
+      "id": "fb-webhook-0001-0000-0000-000000000001",
+      "name": "Webhook",
+      "webhookId": "960e60cd-3594-452e-9556-12e53a6855d4"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $('Webhook').first().json.query['hub.challenge'] }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1452,
+        -180
+      ],
+      "id": "fb-webhook-0001-0000-0000-000000000003",
+      "name": "Respond Challenge"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"status\":\"ok\"}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1452,
+        40
+      ],
+      "id": "fb-webhook-0001-0000-0000-000000000004",
+      "name": "Respond 200"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "CHATDESK_URL",
+              "value": "http://host.docker.internal:8081/chatdesk/api/incoming.php",
+              "type": "string"
+            },
+            {
+              "id": "c2",
+              "name": "CHATDESK_SECRET",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "c3",
+              "name": "FB_GRAPH_VERSION",
+              "value": "v26.0",
+              "type": "string"
+            },
+            {
+              "id": "826d06b7-05f4-4c70-bcff-f78359923888",
+              "name": "VERIFY_TOKEN",
+              "value": "726737d094ddc4039b5b92f41681dad9",
+              "type": "string"
+            },
+            {
+              "id": "209d4eae-4d39-4fed-90a7-cc02e3a9e4dd",
+              "name": "CHANNEL_CODE",
+              "value": "fbchat",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1244,
+        40
+      ],
+      "id": "fb-webhook-0001-0000-0000-000000000005",
+      "name": "Set Config"
+    },
+    {
+      "parameters": {
+        "jsCode": "/* Parse Facebook Messenger webhook -> one item per incoming message\n * Output: { userId, text, messageType, messageId, mediaUrl?, mediaPreviewUrl?, seq }\n * ???????????? echo (?????????????????????????????????????????????????????????????????????????????????????????????) ????????? event ????????????????????????????????????????????????\n */\nconst body = $('Webhook').first().json.body || {};\nconst entries = Array.isArray(body.entry) ? body.entry : [];\nconst out = [];\nlet seq = 0;\n\nfor (const entry of entries) {\n  const messaging = Array.isArray(entry.messaging) ? entry.messaging : [];\n  for (const m of messaging) {\n    if (!m || !m.message) { continue; }\n    if (m.message.is_echo) { continue; }\n    const userId = (m.sender && m.sender.id) ? m.sender.id : '';\n    if (!userId) { continue; }\n\n    const msg = m.message;\n    const atts = Array.isArray(msg.attachments) ? msg.attachments : [];\n    let mtype = 'text';\n    let text = '';\n    if (atts.length > 0) {\n      const a = atts[0];\n      const t = a.type || 'file';\n      mtype = t;\n      if (t === 'image')       { text = '[?????????]'; }\n      else if (t === 'video')  { text = '[??????????????????]'; }\n      else if (t === 'audio')  { text = '[???????????????]'; }\n      else if (t === 'file')   { text = '[????????????]'; }\n      else if (t === 'location') { text = '[?????????????????????]'; }\n      else                     { text = '[' + t + ']'; }\n    } else if (typeof msg.text === 'string') {\n      text = msg.text.trim();\n    }\n    if (!text) { continue; }\n\n    const item = {\n      userId: userId,\n      text: text,\n      messageType: mtype,\n      messageId: msg.mid || '',\n      seq: seq++,\n    pageId: entry.id || '',\n    };\n    if (atts.length > 0 && atts[0].payload && atts[0].payload.url) {\n      item.mediaUrl = atts[0].payload.url;\n      item.mediaPreviewUrl = atts[0].payload.url;\n    }\n    out.push({ json: item });\n  }\n}\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1036,
+        40
+      ],
+      "id": "fb-webhook-0001-0000-0000-000000000006",
+      "name": "Parse FB Events"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/{{ $('Set Config').first().json.FB_GRAPH_VERSION || 'v26.0' }}/{{ $json.userId }}?fields=id,first_name,last_name,profile_pic",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -828,
+        40
+      ],
+      "id": "fb-webhook-0001-0000-0000-000000000007",
+      "name": "Get FB Profile",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "0mEqhx99gPe7KUV2",
+          "name": "ChatDesk LINE Push Header"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": false
+    },
+    {
+      "parameters": {
+        "jsCode": "/* Forward to ChatDesk incoming.php (channel=fb) ??????????????? media URL ??????????????????????????? FB ????????? ??? */\nconst cfg      = $('Set Config').first().json;\nconst events   = $('Parse FB Events').all();   // ??????????????????????????? parse ?????? (???????????????????????? entry order)\nlet profiles = []; try { profiles = $('Get FB Profile').all(); } catch(e) { profiles = []; }                 // Get FB Profile output 1:1 ???????????????????????? item\n\nconst out = [];\nfor (let i = 0; i < events.length; i++) {\n  const ev = events[i].json || {};\n  const pr = (profiles[i] && profiles[i].json) ? profiles[i].json : {};\n  const firstName   = pr.first_name || '';\n  const lastName    = pr.last_name || '';\n  const displayName = [firstName, lastName].filter(Boolean).join(' ');\n  const pictureUrl  = pr.profile_pic || '';\n\n  let botEnabled = true;\n  const payload = {\n    userId: ev.userId,\n    text: ev.text,\n    sender: 'customer',\n    messageId: ev.messageId,\n    messageType: ev.messageType,\n    channel: ($('Shape Channel FB').first().json.channel_code || 'fbchat'),\n  };\n  if (ev.mediaUrl) {\n    payload.mediaUrl = ev.mediaUrl;\n    payload.mediaPreviewUrl = ev.mediaPreviewUrl || ev.mediaUrl;\n  }\n  if (displayName) { payload.displayName = displayName; }\n  if (pictureUrl)  { payload.pictureUrl = pictureUrl; }\n  if (cfg.CHATDESK_SECRET) { payload.secret = cfg.CHATDESK_SECRET; }\n\n  try {\n    const res = await this.helpers.httpRequest({\n      method: 'POST', url: cfg.CHATDESK_URL, json: true, timeout: 20000, body: payload,\n    });\n    botEnabled = !(res && res.botEnabled === false);\n  } catch (err) {\n    botEnabled = true;\n  }\n\n  out.push({ json: {\n    userId: ev.userId,\n    text: ev.text,\n    displayName: displayName,\n    channel: ($('Shape Channel FB').first().json.channel_code || 'fbchat'),\n    botEnabled: botEnabled,\n    isText: ev.messageType === 'text',\n  } });\n}\n\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -620,
+        40
+      ],
+      "id": "fb-webhook-0001-0000-0000-000000000008",
+      "name": "Send to ChatDesk"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "if1",
+              "leftValue": "={{ $json.botEnabled }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -412,
+        40
+      ],
+      "id": "fb-webhook-0001-0000-0000-000000000009",
+      "name": "Bot Can Reply"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ (($('Shape Channel FB').first().json.persona_system || '') + '\\n\\n' + ($('Attach RAG').first().json.text || '') + '\\n\\n[RAG context — use to answer]:\\n' + ($('Attach RAG').first().json.rag_context || '') + (($('Merge Shop SQL').first().json.sql_block || '') ? '\\n\\n[Shop DB facts — take numbers/prices/shops from here only, never invent specs]:\\n' + $('Merge Shop SQL').first().json.sql_block : '')) }}",
+        "options": {
+          "systemMessage": "=??????????????????????????????????????????????????????????????????????????????/???????????????????????? Facebook Messenger (ChatDesk)\n??????????????????????????????????????????????????????????????????????????????????????????????????? ?????????????????? ????????????????????????????????????????????????????????? ???????????????????????????????????????????????????????????????????????????\n???????????????????????????????????????????????????????????????????????????????????????????????????????????? ??????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????? ?????????????????????????????????????????????????????????????????????\n?????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????? ?????????????????????????????????????????????????????????????????????????????????\n?????????????????????????????? (???????????????): {{ $json.displayName || '???????????????????????????????????????' }}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -204,
+        -140
+      ],
+      "id": "fb-webhook-0001-0000-0000-000000000010",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -156,
+        96
+      ],
+      "id": "fb-webhook-0001-0000-0000-000000000011",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "VuE8YX5cbPUw7Ay8",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "/* Take AI/LLM output, attach userId, carry RAG image URLs (public https only, max 4) */\nconst items = $input.all();\nconst out = [];\nlet imgs = [];\ntry { imgs = ($('Attach RAG').first().json.rag_images || []); } catch (err) { imgs = []; }\ntry { const sq = ($('Merge Shop SQL').first().json.sql_images || []); if (Array.isArray(sq)) imgs = imgs.concat(sq); } catch (err2) {}\nif (!Array.isArray(imgs)) imgs = [];\nlet pubBase = '';\ntry { pubBase = ($('Set Config').first().json.PUBLIC_WEB_BASE || '').toString().replace(/\\/$/, ''); } catch (err3) {}\nconst seen = {};\nimgs = imgs.map(u => { u = (u || '').toString().trim(); if (pubBase && /^http:\\/\\/127\\.0\\.0\\.1:8081\\//i.test(u)) u = pubBase + u.slice(21); return u; }).filter(u => /^https:\\/\\//i.test(u) && !seen[u] && (seen[u] = 1)).slice(0, 4);\nfor (let i = 0; i < items.length; i++) {\n  let userId = '';\n  try { userId = $('Send to ChatDesk').itemMatching(i).json.userId || ''; } catch (err) { userId = ''; }\n  const raw = items[i].json.output || items[i].json.text || '';\n  const replyText = String(raw).replace(/<think>[\\s\\S]*?<\\/think>/g, '').trim();\n  if (userId && replyText) { out.push({ json: { userId: userId, replyText: replyText, images: imgs } }); }\n}\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4,
+        -140
+      ],
+      "id": "fb-webhook-0001-0000-0000-000000000012",
+      "name": "Build Reply"
+    },
+    {
+      "parameters": {
+        "jsCode": "/* Build Facebook Messenger Graph API payload from bot reply (text only) */\nconst items = $input.all();\nconst out = [];\nfor (const it of items) {\n  const j = it.json || {};\n  if (!j.userId || !j.replyText) { continue; }\n  out.push({ json: {\n    recipient: { id: j.userId },\n    message: { text: j.replyText },\n    messaging_type: 'RESPONSE',\n  } });\n  const imgs = Array.isArray(j.images) ? j.images : [];\n  for (const u of imgs.slice(0, 3)) {\n    const url = (u || '').toString().trim();\n    if (!/^https:\\/\\//i.test(url)) { continue; }\n    out.push({ json: {\n      recipient: { id: j.userId },\n      message: { attachment: { type: 'image', payload: { url: url, is_reusable: true } } },\n      messaging_type: 'RESPONSE',\n    } });\n  }\n}\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        212,
+        -140
+      ],
+      "id": "fb-webhook-0001-0000-0000-000000000013",
+      "name": "Create FB Message"
+    },
+    {
+      "parameters": {
+        "sendBody": true,
+        "specifyBody": "json",
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $('Set Config').first().json.FB_GRAPH_VERSION || 'v26.0' }}/me/messages",
+        "jsonBody": "={{ $json }}",
+        "options": {},
+        "genericAuthType": "httpHeaderAuth",
+        "authentication": "genericCredentialType"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        420,
+        -140
+      ],
+      "id": "fb-webhook-0001-0000-0000-000000000014",
+      "name": "Send FB",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "0mEqhx99gPe7KUV2",
+          "name": "ChatDesk LINE Push Header"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": false
+    },
+    {
+      "parameters": {
+        "jsCode": "/* Save bot reply into ChatDesk so it shows in agent inbox */\nconst cfg = $('Set Config').first().json;\n\nfor (const item of $('Build Reply').all()) {\n  const j = item.json || {};\n  if (!j.userId || !j.replyText) { continue; }\n  const payload = { userId: j.userId, text: j.replyText, sender: 'bot', channel: $('Shape Channel FB').first().json.channel_code || 'line' };\n  if (cfg.CHATDESK_SECRET) { payload.secret = cfg.CHATDESK_SECRET; }\n  const res = await this.helpers.httpRequest({\n    method: 'POST', url: cfg.CHATDESK_URL, json: true, timeout: 20000, body: payload,\n  });\n  if (!res || res.ok !== true) {\n    throw new Error('ChatDesk save failed: ' + JSON.stringify(res));\n  }\n  const imgs = Array.isArray(j.images) ? j.images : [];\n  for (const u of imgs.slice(0, 4)) {\n    const url = (u || '').toString().trim();\n    if (!/^https:\\/\\//i.test(url)) { continue; }\n    const ipayload = { userId: j.userId, text: url, sender: 'bot', channel: $('Shape Channel FB').first().json.channel_code || 'line', messageType: 'image', mediaUrl: url, mediaPreviewUrl: url };\n    if (cfg.CHATDESK_SECRET) { ipayload.secret = cfg.CHATDESK_SECRET; }\n    await this.helpers.httpRequest({ method: 'POST', url: cfg.CHATDESK_URL, json: true, timeout: 20000, body: ipayload });\n  }\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        628,
+        -140
+      ],
+      "id": "fb-webhook-0001-0000-0000-000000000015",
+      "name": "Notify ChatDesk"
+    },
+    {
+      "id": "74ed4a46-8025-4ba5-9edf-17b8fa45bfea",
+      "name": "Q Channel FB",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const cfg = $('Set Config').first().json;\nconst code = ((cfg.CHANNEL_CODE || 'fbchat') + '').replace(/'/g, \"''\");\nconst sel = `SELECT m.channel_code, COALESCE(m.persona_system, '') AS persona_system, COALESCE((SELECT json_agg(group_id ORDER BY group_id) FROM channel_rag_groups WHERE channel_code = m.channel_code), '[]') AS group_ids FROM channel_map m`;\nreturn [{ json: { sql: `SELECT COALESCE((SELECT json_agg(row_to_json(t)) FROM (${sel} WHERE m.channel_code = '${code}') t), '[]') AS rows` } }];"
+      }
+    },
+    {
+      "id": "9f0d4b17-b09c-4376-856b-2a5faccafce6",
+      "name": "Run Channel FB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        -180,
+        40
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "3ddce3ea-2a75-4415-b80d-90df292d6ef7",
+      "name": "Shape Channel FB",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        40,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const r0 = $input.first().json;\nlet rows = r0.rows || [];\nif (typeof rows === 'string') { try { rows = JSON.parse(rows); } catch(e) { rows = []; } }\nconst r = rows[0] || {};\nconst parseIds = function(v){ try {\n  if (Array.isArray(v)) return v.map(function(x){ return parseInt(x); }).filter(function(x){ return x > 0; });\n  if (typeof v === 'string' && v.trim() !== '') return JSON.parse(v).map(function(x){ return parseInt(x); }).filter(function(x){ return x > 0; });\n} catch(e){} return []; };\nreturn [{ json: {\n  channel_code: (r.channel_code || 'fbchat').toString(),\n  group_ids: parseIds(r.group_ids),\n  persona_system: (r.persona_system || '').toString() } }];"
+      }
+    },
+    {
+      "id": "8088658d-7fbd-4ede-895c-1ba180e7dfec",
+      "name": "RAG Lookup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        260,
+        280
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:5678/webhook/rag-answer",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"question\": {{ $json.text.toJsonString() }}, \"top_k\": 3, \"group_ids\": {{ JSON.stringify((function(){ try { var g = $('Shape Channel FB').first().json.group_ids; if (Array.isArray(g)) return g.filter(function(x){ return parseInt(x) > 0; }); if (typeof g === 'string') return JSON.parse(g); } catch(e){} return []; })()) }}, \"session_id\": \"{{ $('Shape Channel FB').first().json.channel_code }}:{{ $json.userId }}\"}",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": false
+    },
+    {
+      "id": "c90aaec9-5411-4111-8d55-b22f26defe26",
+      "name": "Attach RAG",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        280
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items = $input.all().map(r => r.json);\nconst orig = items.find(r => r.text !== undefined && r.ok === undefined) || {};\nconst rag = items.find(r => r.ok !== undefined) || {};\nconst rc = (rag.text || '').toString();\nconst rimgs = Array.isArray(rag.images) ? rag.images.map(u => (u || '').toString().trim()).filter(u => u !== '') : [];\nreturn [{ json: { ...orig, rag_context: rc, rag_sources: rag.sources || [], rag_images: rimgs } }];"
+      }
+    },
+    {
+      "id": "dea90cf2-a0eb-49a6-9fa8-29286c3d1e83",
+      "name": "Shop SQL Lookup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        280
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:5678/webhook/api-shop-sql",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"text\": {{ $json.text.toJsonString() }}, \"userId\": {{ $json.userId.toJsonString() }}, \"history\": []}",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": false
+    },
+    {
+      "id": "a4c33f08-9710-4882-bbcf-368a1abcdb57",
+      "name": "Merge Shop SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        280
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "/* Merge Attach RAG item with Shop SQL result; decide deterministic SQL reply */\nconst a = $('Attach RAG').first().json;\nlet s = {};\ntry { s = $('Shop SQL Lookup').first().json || {}; } catch (e) { s = {}; }\nconst sql_rows = parseInt(s.rows) || 0;\nconst sql_answer = (s.answer || '').toString();\nconst sql_block = (s.block || '').toString();\nlet sql_images = [];\ntry {\n  const arr = s.images;\n  if (Array.isArray(arr)) sql_images = arr.map(u => (u || '').toString().trim()).filter(u => /^https?:\\/\\//i.test(u)).slice(0, 4);\n} catch (e2) { sql_images = []; }\nconst adviceQ = /(\\u0e41\\u0e19\\u0e30\\u0e19\\u0e33|\\u0e40\\u0e1b\\u0e23\\u0e35\\u0e22\\u0e1a\\u0e40\\u0e17\\u0e35\\u0e22\\u0e1a|\\u0e40\\u0e1b\\u0e23\\u0e35\\u0e22\\u0e1a|\\u0e04\\u0e38\\u0e49\\u0e21|\\u0e14\\u0e35\\u0e44\\u0e2b\\u0e21|\\u0e40\\u0e25\\u0e37\\u0e2d\\u0e01|\\u0e15\\u0e31\\u0e27\\u0e44\\u0e2b\\u0e19|\\u0e23\\u0e38\\u0e48\\u0e19\\u0e44\\u0e2b\\u0e19|\\u0e14\\u0e35\\u0e01\\u0e27\\u0e48\\u0e32)/.test(a.text || '');\nconst sql_direct = sql_rows > 0 && sql_answer !== '' && !adviceQ;\nreturn [{ json: { ...a, sql_block, sql_answer, sql_images, sql_rows, sql_direct } }];"
+      }
+    },
+    {
+      "id": "d55ece40-3ba2-4d49-b931-a3cbd0ce3d1b",
+      "name": "Shape SQL Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        140
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "/* Deterministic product answer from Shop SQL (skip LLM) */\nconst m = $('Merge Shop SQL').first().json;\nreturn [{ json: { output: (m.sql_answer || '').toString().slice(0, 2000) } }];"
+      }
+    },
+    {
+      "id": "49b53c0a-4d7c-45c9-83ea-683f3976bd9b",
+      "name": "Get Voice Model",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1360,
+        420
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE((SELECT value FROM app_settings WHERE key = 'llm.qa'), (SELECT value FROM app_settings WHERE key = 'voice.llm_model'), 'gemini') AS value",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "234df35f-d310-4037-89ab-e806dd5a6a91",
+      "name": "Ollama Local",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2020,
+        420
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\": \"qwen3:4b-instruct\", \"stream\": false, \"options\": {\"temperature\": 0.7, \"num_predict\": 512}, \"system\": {{ $json.system.toJsonString() }}, \"messages\": {{ $json.messages.toJsonString() }}}",
+        "options": {
+          "timeout": 120000
+        }
+      }
+    },
+    {
+      "id": "08acbc76-6bda-4845-92c9-c3593b3e97de",
+      "name": "Shape Ollama Out",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        420
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const it = $input.first().json;\nlet t = '';\ntry { t = ((it.message || {}).content || '').toString(); } catch(e) {}\nt = t.replace(/^[\\s\\S]*?<\\/think>/, '').replace(/<think>[\\s\\S]*?<\\/think>/g, '').trim();\nif (!t) throw new Error('Local LLM ไม่ตอบ');\nreturn [{ json: { output: t.slice(0, 2000) } }];"
+      }
+    },
+    {
+      "id": "1a716136-88df-4aa3-8d4d-12565ffa891d",
+      "name": "Build Ollama Body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        420
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const a = $('Attach RAG').first().json;\nconst dn = ((a.displayName || '') + '') || 'ลูกค้าท่านนี้';\nconst SYSJS = \"=คุณคือผู้ช่วยตอบแชทของร้าน/องค์กรบน LINE (ChatDesk)\\nกรุณาตอบลูกค้าด้วยภาษาไทยที่สุภาพ กระชับ และช่วยเหลือได้จริง ตามข้อมูลของร้านที่มีอยู่\\nถ้าลูกค้าถามเรื่องที่ไม่อยู่ในข้อมูล ให้แนะนำให้ติดต่อเจ้าหน้าที่หรือตอบว่าไม่ทราบ พร้อมเสนอช่วยเรื่องอื่น\\nใช้ถ้อยคำที่เป็นธรรมชาติเหมือนพูดกับลูกค้า ไม่ใช้ศัพท์เทคนิคเกินจำเป็น\\nชื่อลูกค้า (ถ้ามี): {{ $json.displayName || 'ลูกค้าท่านนี้' }}\\nเพิ่มเติม: ถ้ามี [ข้อมูลจากฐานความรู้] แนบมา ให้ใช้ข้อมูลนั้นตอบเป็นหลัก (อ้างอิงสั้น ๆ ได้)\";\nconst chj = $('Shape Channel FB').first().json;\nconst perj = (chj.persona_system || '').trim();\nlet sys;\nif (perj) { sys = perj; }\nelse { sys = SYSJS; sys = sys.replace(/^=/, '').split(\"{{ $json.displayName || 'ลูกค้าท่านนี้' }}\").join(dn); }\nsys += ' /no_think';\nconst sqlBlock = (a.sql_block || '');\nconst content = (a.text || '') + '\\n\\n[ข้อมูลจากฐานความรู้ RAG — ใช้ประกอบการตอบ ถ้าไม่เกี่ยวให้ตอบตามปกติ]:\\n' + (a.rag_context || '')\n  + (sqlBlock ? '\\n\\n[ข้อมูลสดจากฐานข้อมูลร้าน — ข้อเท็จจริง ต้องยึดตัวเลขราคา/สต็อก/ชื่อร้านตามนี้เท่านั้น ห้ามดึงตัวเลขจากแถวอื่นหรือแต่ง spec เพิ่ม]:\\n' + sqlBlock : '');\nreturn [{ json: { system: sys, messages: [{ role: 'user', content: content }] } }];"
+      }
+    },
+    {
+      "id": "72724d3e-d963-49b6-91c5-c74e7db3b4ef",
+      "name": "SQL Direct Answer?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1140,
+        280
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "87e1e4c8-a7d4-496b-ae14-75c7dbf30d9b",
+              "leftValue": "={{ $json.sql_direct }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "914b1aa4-b09c-415d-b6cc-e079698e05b8",
+      "name": "IF Use Local?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1580,
+        420
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "20d7040c-4b00-4b6b-8225-9fa34c33de5c",
+              "leftValue": "=((() => { try { return $('Get Voice Model').first().json.value; } catch(e) { return 'gemini'; } })() === 'qwen3:4b')",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "1208d873-29d4-4686-a3fb-96c91dcf5475",
+      "name": "Merge RAG",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.1,
+      "position": [
+        260,
+        480
+      ],
+      "parameters": {
+        "mode": "append"
+      }
+    },
+    {
+      "id": "2af8407f-d949-40ab-97c8-02ec9dae45eb",
+      "name": "Odoo ChatLead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -400,
+        -260
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:5678/webhook/api-odoo-lead",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"op\": \"chat\", \"channel\": {{ $json.channel.toJsonString() }}, \"external_user_id\": {{ $json.userId.toJsonString() }}, \"display_name\": {{ ($json.displayName || \"\").toJsonString() }}, \"text\": {{ $json.text.toJsonString() }}}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": false
+    },
+    {
+      "id": "a599e68e-881b-41c2-9191-afe5df619503",
+      "name": "Verify Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        -140
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const q = ($('Webhook').first().json.query || {});\nconst cfg = $('Set Config').first().json;\nconst okMode = (q['hub.mode'] || '') === 'subscribe';\nconst tok = (q['hub.verify_token'] || '').toString();\nconst okToken = tok !== '' && tok === ((cfg.VERIFY_TOKEN || '').toString());\nreturn [{ json: { verified: okMode && okToken } }];"
+      }
+    },
+    {
+      "id": "a7f30155-5c43-4f1a-9340-e8f82bfb5ecc",
+      "name": "IF Verified?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        220,
+        -140
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "1b2f3b7d-f132-4b6e-9a3a-9d4cae5cf218",
+              "leftValue": "={{ $json.verified }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Set Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond 200": {
+      "main": [
+        [
+          {
+            "node": "Parse FB Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config": {
+      "main": [
+        [
+          {
+            "node": "Verify Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse FB Events": {
+      "main": [
+        [
+          {
+            "node": "Get FB Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get FB Profile": {
+      "main": [
+        [
+          {
+            "node": "Q Channel FB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to ChatDesk": {
+      "main": [
+        [
+          {
+            "node": "Bot Can Reply",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Odoo ChatLead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bot Can Reply": {
+      "main": [
+        [
+          {
+            "node": "RAG Lookup",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge RAG",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Build Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Reply": {
+      "main": [
+        [
+          {
+            "node": "Notify ChatDesk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create FB Message": {
+      "main": [
+        [
+          {
+            "node": "Send FB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Q Channel FB": {
+      "main": [
+        [
+          {
+            "node": "Run Channel FB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Channel FB": {
+      "main": [
+        [
+          {
+            "node": "Shape Channel FB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Channel FB": {
+      "main": [
+        [
+          {
+            "node": "Send to ChatDesk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RAG Lookup": {
+      "main": [
+        [
+          {
+            "node": "Merge RAG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge RAG": {
+      "main": [
+        [
+          {
+            "node": "Attach RAG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach RAG": {
+      "main": [
+        [
+          {
+            "node": "Shop SQL Lookup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shop SQL Lookup": {
+      "main": [
+        [
+          {
+            "node": "Merge Shop SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Shop SQL": {
+      "main": [
+        [
+          {
+            "node": "SQL Direct Answer?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SQL Direct Answer?": {
+      "main": [
+        [
+          {
+            "node": "Shape SQL Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Voice Model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape SQL Reply": {
+      "main": [
+        [
+          {
+            "node": "Build Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Voice Model": {
+      "main": [
+        [
+          {
+            "node": "IF Use Local?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Use Local?": {
+      "main": [
+        [
+          {
+            "node": "Build Ollama Body",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Ollama Body": {
+      "main": [
+        [
+          {
+            "node": "Ollama Local",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Local": {
+      "main": [
+        [
+          {
+            "node": "Shape Ollama Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Ollama Out": {
+      "main": [
+        [
+          {
+            "node": "Build Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Check": {
+      "main": [
+        [
+          {
+            "node": "IF Verified?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Verified?": {
+      "main": [
+        [
+          {
+            "node": "Respond Challenge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify ChatDesk": {
+      "main": [
+        [
+          {
+            "node": "Create FB Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "pinData": {}
+}

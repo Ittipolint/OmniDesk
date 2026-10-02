@@ -1,0 +1,551 @@
+{
+  "_export": {
+    "workflowId": "139C66vWSpCv5G2Q",
+    "active": true,
+    "exportedAt": "2026-10-02T20:53:37Z",
+    "note": "Secrets replaced with __PLACEHOLDERS__. See README."
+  },
+  "name": "ChatDesk API-01 AI Chat (unified brain)",
+  "nodes": [
+    {
+      "id": "0c1be255-167b-44d7-a5ab-e7c346c845cd",
+      "name": "Webhook AI Chat",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api-ai-chat",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "046bf939-fa72-4b7c-967b-09a27da568a6"
+    },
+    {
+      "id": "c3282926-8b44-47d6-993a-e1f74babd2d5",
+      "name": "Prep",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const b = $input.first().json.body || $input.first().json || {};\nconst hist = Array.isArray(b.history) ? b.history.filter(h => h && h.text).slice(-10) : [];\nconst normIds = function(v){ if (v === undefined || v === null || v === '') return []; const a = Array.isArray(v) ? v : [v]; return a.map(function(x){ return parseInt(x); }).filter(function(x){ return x > 0; }); };\nreturn [{ json: { text: (b.text || '').toString().slice(0, 2000),\n  userId: (b.userId || '').toString(),\n  channel: (b.channel || '').toString(),\n  group_id: b.group_id ? parseInt(b.group_id) : null,\n  group_ids: normIds(b.group_ids !== undefined ? b.group_ids : b.group_id),\n  session_id: (b.session_id || 'ai-' + Date.now()).toString(),\n  history: hist } }];"
+      }
+    },
+    {
+      "id": "758cce8e-ca7e-48ee-97c1-b1710d961bbe",
+      "name": "Get Voice Model",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        520,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE((SELECT value FROM app_settings WHERE key = 'llm.qa'), (SELECT value FROM app_settings WHERE key = 'voice.llm_model'), 'gemini') AS value",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "450a14ff-d5ce-4033-aed0-c7bec9fb08be",
+      "name": "Get Persona",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        580,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const g = $('Prep').first().json;\nconst ch = (g.channel || '').toString();\nconst esc = (s) => (s || '').toString().replace(/'/g, \"''\");\nconst norm = function(v){ if (v === undefined || v === null || v === '') return []; const a = Array.isArray(v) ? v : [v]; return a.map(function(x){ return parseInt(x); }).filter(function(x){ return x > 0; }); };\nif (ch && /^[a-z0-9_]{2,32}$/.test(ch)) {\n  return [{ json: { sql: `SELECT COALESCE((SELECT persona_system FROM channel_map WHERE channel_code = '${esc(ch)}'), '') AS persona, COALESCE((SELECT json_agg(group_id ORDER BY group_id) FROM channel_rag_groups WHERE channel_code = '${esc(ch)}'), '[]') AS group_ids` } }];\n}\nconst gids = norm(g.group_ids !== undefined && g.group_ids !== null ? g.group_ids : g.group_id);\nreturn [{ json: { sql: `SELECT '' AS persona, '${JSON.stringify(gids)}' AS group_ids` } }];"
+      }
+    },
+    {
+      "id": "7ca2b2d6-b21f-4868-8d44-4aa53a48d618",
+      "name": "Run Persona",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        580,
+        480
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "7aaa806d-306e-4f16-883b-4b38c2eb5339",
+      "name": "RAG Lookup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        640,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:5678/webhook/rag-answer",
+        "options": {
+          "timeout": 60000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"question\": {{ $('Prep').first().json.text.toJsonString() }}, \"top_k\": 4, \"group_ids\": {{ JSON.stringify((function(){ try { var g = $('Run Persona').first().json.group_ids; if (Array.isArray(g)) return g.filter(function(x){ return parseInt(x) > 0; }); if (typeof g === 'string') return JSON.parse(g); } catch(e){} return []; })()) }}, \"session_id\": {{ $('Prep').first().json.session_id.toJsonString() }}}"
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": false
+    },
+    {
+      "id": "750ed528-bd66-4d62-a1cf-fb4ace8380ee",
+      "name": "Pick RAG or Gemini",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const orig = $('Prep').first().json;\nconst r = $input.first().json;\nconst FALLBACK = 'ไม่พบข้อมูลนี้ในฐานความรู้';\nconst use_rag = !!(r && r.ok && r.text && r.text.indexOf(FALLBACK) < 0 && (r.sources || []).length);\nreturn [{ json: { ...orig, use_rag: use_rag,\n  rag_text: use_rag ? r.text : '', rag_images: use_rag ? (r.images || []) : [],\n  rag_sources: use_rag ? (r.sources || []) : [] } }];"
+      }
+    },
+    {
+      "id": "76cbe30f-ac9a-4bd8-9d0a-2aeeee22befb",
+      "name": "IF Use RAG?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1080,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "67e68f8f-4a54-4a9f-a717-1133ee598c97",
+              "leftValue": "={{ $json.use_rag }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "ec61f25e-bb11-4580-adf8-84c0a580510e",
+      "name": "Shape RAG",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const j = $input.first().json;\nreturn [{ json: { ok: true, text: j.rag_text, images: j.rag_images || [],\n  sources: j.rag_sources || [], via: 'rag' } }];"
+      }
+    },
+    {
+      "id": "c938fc6a-2dce-43ec-a21b-74ff100ca774",
+      "name": "IF Use Local LLM?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1300,
+        420
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "7dfc0e05-020e-4366-9c29-ff542a3c0e59",
+              "leftValue": "={{ ((() => { try { return $('Get Voice Model').first().json.value; } catch(e) { return 'gemini'; } })() === 'qwen3:4b') }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c01c8b0d-915f-4d30-a1fa-b61eb0baf4d3",
+      "name": "Build Gemini Body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        420
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const j = $input.first().json;\nconst GEM = \"คุณคือผู้ช่วยจองที่พักของเว็บ TripThai พูดภาษาไทยสุภาพเป็นกันเอง ตอบสั้นกระชับเหมาะกับการฟังออกเสียง (ไม่เกิน 3-4 ประโยค) ห้ามใช้ markdown ตาราง โค้ด หรืออีโมจิ ข้อมูลเว็บ: โค้ด TRIPTHAI100 ลด 100 บาท, ที่พักเริ่ม 1,400 บาท/คืน, หลายรายการยกเลิกฟรี, จังหวัดยอดนิยม: กรุงเทพฯ เชียงใหม่ ภูเก็ต พัทยา กระบี่ หัวหิน เกาะสมุย เชียงราย ถ้าถูกถามเรื่องที่ไม่มีข้อมูล ให้บอกว่าจะส่งต่อให้เจ้าหน้าที่ช่วยเหลือ\";\nconst sys = (() => { try { const p = ($('Run Persona').first().json.persona || '').trim(); return p ? p : GEM; } catch(e) { return GEM; } })();\nconst contents = [];\n(j.history || []).forEach(h => {\n  const t = (h.text || '').toString().trim().slice(0, 1000);\n  if (!t) return;\n  contents.push({ role: h.role === 'model' ? 'model' : 'user', parts: [{ text: t }] });\n});\nwhile (contents.length && contents[0].role !== 'user') contents.shift();\ncontents.push({ role: 'user', parts: [{ text: j.text }] });\nreturn [{ json: { body: { system_instruction: { parts: [{ text: sys }] }, contents: contents,\n  generationConfig: { maxOutputTokens: 1024, temperature: 0.7 } } } }];"
+      }
+    },
+    {
+      "id": "ebbd48eb-8735-4509-8f84-78f7c9b5a29c",
+      "name": "Get Gemini Key",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1410,
+        420
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE((SELECT value FROM app_settings WHERE key = 'gemini.api_key'), '__GEMINI_API_KEY__') AS value",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "638cf604-bb45-41bb-980d-9d2b9d89d13a",
+      "name": "Gemini Direct",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1520,
+        420
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + $('Get Gemini Key').first().json.value }}",
+        "options": {
+          "timeout": 90000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $('Build Gemini Body').first().json.body }}"
+      }
+    },
+    {
+      "id": "17c762ed-2454-4649-af3a-4553ea510363",
+      "name": "Shape Gemini",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1740,
+        420
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const it = $input.first().json;\nlet t = '';\ntry { t = it.candidates[0].content.parts.map(p => p.text || '').join(''); } catch(e) {}\nt = t.trim();\nif (!t) throw new Error('Gemini ไม่ตอบ');\nreturn [{ json: { ok: true, text: t.slice(0, 2000), images: [], sources: [], via: 'gemini' } }];"
+      }
+    },
+    {
+      "id": "a9ad752b-72fc-4231-a96d-a7855d03d43e",
+      "name": "Build Ollama Body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        560
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const j = $input.first().json;\nconst GEM = \"คุณคือผู้ช่วยจองที่พักของเว็บ TripThai พูดภาษาไทยสุภาพเป็นกันเอง ตอบสั้นกระชับเหมาะกับการฟังออกเสียง (ไม่เกิน 3-4 ประโยค) ห้ามใช้ markdown ตาราง โค้ด หรืออีโมจิ ข้อมูลเว็บ: โค้ด TRIPTHAI100 ลด 100 บาท, ที่พักเริ่ม 1,400 บาท/คืน, หลายรายการยกเลิกฟรี, จังหวัดยอดนิยม: กรุงเทพฯ เชียงใหม่ ภูเก็ต พัทยา กระบี่ หัวหิน เกาะสมุย เชียงราย ถ้าถูกถามเรื่องที่ไม่มีข้อมูล ให้บอกว่าจะส่งต่อให้เจ้าหน้าที่ช่วยเหลือ\";\nconst per = (() => { try { const p = ($('Run Persona').first().json.persona || '').trim(); return p ? p : GEM; } catch(e) { return GEM; } })();\nconst msgs = [];\n(j.history || []).forEach(h => {\n  const t = (h.text || '').toString().trim().slice(0, 1000);\n  if (!t) return;\n  msgs.push({ role: h.role === 'model' ? 'assistant' : 'user', content: t });\n});\nwhile (msgs.length && msgs[0].role !== 'user') msgs.shift();\nmsgs.push({ role: 'user', content: j.text });\nreturn [{ json: { messages: msgs, system: per + ' /no_think' } }];"
+      }
+    },
+    {
+      "id": "19abb525-52a6-4f20-a0dc-e1ecbcf7eef0",
+      "name": "Ollama Local",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1740,
+        560
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/chat",
+        "options": {
+          "timeout": 120000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\": \"qwen3:4b-instruct\", \"stream\": false, \"options\": {\"temperature\": 0.7, \"num_predict\": 512}, \"system\": {{ $json.system.toJsonString() }}, \"messages\": {{ $json.messages.toJsonString() }}}"
+      }
+    },
+    {
+      "id": "9309dedb-16b1-40f5-9fc7-aad14e40fc03",
+      "name": "Shape Ollama",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1960,
+        560
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const it = $input.first().json;\nlet t = '';\ntry { t = ((it.message || {}).content || '').toString(); } catch(e) {}\nt = t.replace(/^[\\s\\S]*?<\\/think>/, '').replace(/<think>[\\s\\S]*?<\\/think>/g, '').trim();\nif (!t) throw new Error('Local LLM ไม่ตอบ');\nreturn [{ json: { ok: true, text: t.slice(0, 2000), images: [], sources: [], via: 'qwen3:4b' } }];"
+      }
+    },
+    {
+      "id": "c670ea48-2882-4660-ac4b-c47fb55d660f",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2180,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook AI Chat": {
+      "main": [
+        [
+          {
+            "node": "Prep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep": {
+      "main": [
+        [
+          {
+            "node": "Get Voice Model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Voice Model": {
+      "main": [
+        [
+          {
+            "node": "Get Persona",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Persona": {
+      "main": [
+        [
+          {
+            "node": "Run Persona",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Persona": {
+      "main": [
+        [
+          {
+            "node": "RAG Lookup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RAG Lookup": {
+      "main": [
+        [
+          {
+            "node": "Pick RAG or Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Use RAG?": {
+      "main": [
+        [
+          {
+            "node": "Shape RAG",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IF Use Local LLM?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape RAG": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Use Local LLM?": {
+      "main": [
+        [
+          {
+            "node": "Build Ollama Body",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Gemini Body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Ollama Body": {
+      "main": [
+        [
+          {
+            "node": "Ollama Local",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Local": {
+      "main": [
+        [
+          {
+            "node": "Shape Ollama",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Ollama": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Gemini Body": {
+      "main": [
+        [
+          {
+            "node": "Get Gemini Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Gemini Key": {
+      "main": [
+        [
+          {
+            "node": "Gemini Direct",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Direct": {
+      "main": [
+        [
+          {
+            "node": "Shape Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Gemini": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick RAG or Gemini": {
+      "main": [
+        [
+          {
+            "node": "IF Use RAG?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

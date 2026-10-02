@@ -1,0 +1,1176 @@
+{
+  "_export": {
+    "workflowId": "DPXcIEfqSaxmbLV3",
+    "active": true,
+    "exportedAt": "2026-10-02T20:53:38Z",
+    "note": "Secrets replaced with __PLACEHOLDERS__. See README."
+  },
+  "name": "[LOCAL] ChatDesk Manager - LINE",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chatdesk-mgr",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1600,
+        40
+      ],
+      "id": "6c8acde0-1b5b-4b10-9771-58072577acc0",
+      "name": "Webhook",
+      "webhookId": "95a99401-e151-44cc-bf3f-943f4d67863e"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"status\":\"ok\"}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1392,
+        40
+      ],
+      "id": "d1b7ec87-b8df-4bf3-afb9-9f018913e65d",
+      "name": "Respond 200"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "CHATDESK_URL",
+              "value": "http://host.docker.internal:8081/chatdesk/api/incoming.php",
+              "type": "string"
+            },
+            {
+              "id": "c2",
+              "name": "CHATDESK_SECRET",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "c3",
+              "name": "CHATDESK_UPLOAD_URL",
+              "value": "http://host.docker.internal:8081/chatdesk/api/upload.php",
+              "type": "string"
+            },
+            {
+              "id": "2fdd4850-bd89-42cd-81dc-9ac63920cff7",
+              "name": "PUBLIC_WEB_BASE",
+              "value": "https://selected-limit-improve-murphy.trycloudflare.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1184,
+        40
+      ],
+      "id": "406db903-2d12-4b22-923b-e4925f578e30",
+      "name": "Set Config"
+    },
+    {
+      "parameters": {
+        "jsCode": "/* Parse LINE webhook -> one item per message\n * Output: { userId, text, messageType, messageId, stickerPackage?, stickerId?, seq }\n */\nconst body = $('Webhook').first().json.body || {};\nconst events = Array.isArray(body.events) ? body.events : [];\nconst out = [];\nlet seq = 0;\n\nfor (const ev of events) {\n  if (ev.type !== 'message' || !ev.message) { continue; }\n  const userId = (ev.source && ev.source.userId) ? ev.source.userId : '';\n  const dest = (body.destination || '').toString();\n  if (!userId) { continue; }\n\n  const mtype = ev.message.type || 'text';\n  let text = '';\n  if (mtype === 'text')          { text = String(ev.message.text || '').trim(); }\n  else if (mtype === 'sticker')  { text = '[สติกเกอร์]'; }\n  else if (mtype === 'image')    { text = '[ภาพ]'; }\n  else if (mtype === 'video')    { text = '[วิดีโอ]'; }\n  else if (mtype === 'audio')    { text = '[เสียง]'; }\n  else if (mtype === 'file')     { text = '[ไฟล์]'; }\n  else if (mtype === 'location') { text = '[ตำแหน่งที่ตั้ง]'; }\n  else                           { text = '[' + mtype + ']'; }\n  if (!text) { continue; }\n\n  const item = {\n    destination: dest,\n    userId: userId,\n    text: text,\n    messageType: mtype,\n    messageId: ev.message.id || '',\n    seq: seq++,\n  };\n  if (mtype === 'sticker') {\n    item.stickerPackage = ev.message.packageId ? String(ev.message.packageId) : '';\n    item.stickerId = ev.message.stickerId ? String(ev.message.stickerId) : '';\n  }\n\n  out.push({ json: item });\n}\n\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -976,
+        40
+      ],
+      "id": "8aa294ff-59d7-42bc-9ab0-7596ffd48b46",
+      "name": "Parse Events"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "if1",
+              "leftValue": "={{ [\"image\",\"video\",\"audio\",\"file\"].includes($json.messageType) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -768,
+        40
+      ],
+      "id": "b1b2b3b4-0000-4000-8000-000000000001",
+      "name": "Has Media Content"
+    },
+    {
+      "parameters": {
+        "operation": "getContent",
+        "messageId": "={{ $json.messageId }}",
+        "binaryPropertyName": "data",
+        "additionalOptions": {}
+      },
+      "type": "@aotoki/n8n-nodes-line-messaging.lineMessagingData",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        -160
+      ],
+      "id": "c1c2c3c4-0000-4000-8000-000000000002",
+      "name": "Get Media Content",
+      "credentials": {
+        "lineMessagingApi": {
+          "id": "C1cbIoAIw8iJFTTw",
+          "name": "ChatDesk LINE Messaging"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $(\"Set Config\").first().json.CHATDESK_UPLOAD_URL }}",
+        "sendBody": true,
+        "specifyBody": "binary",
+        "dataPropertyName": "data",
+        "options": {
+          "copyInputFields": true,
+          "timeout": 30000,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-ChatDesk-Filename",
+                "value": "=line_{{ $json.messageId }}"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -352,
+        -160
+      ],
+      "id": "d1d2d3d4-0000-4000-8000-000000000003",
+      "name": "Upload Media"
+    },
+    {
+      "parameters": {
+        "jsCode": "/* Attach mediaUrl from upload response back to original item (matched by messageId) */\nconst uploads = $input.all();\nconst parsed  = $('Parse Events').all();\nconst out = [];\n\nfor (const up of uploads) {\n  const j = up.json || {};\n  const src = parsed.find(p => p.json.messageId === j.messageId) || { json: {} };\n  const s = src.json || {};\n  const url = j.url || '';\n  out.push({ json: {\n    userId: s.userId || '',\n    text: s.text || '',\n    messageType: s.messageType || 'image',\n    messageId: s.messageId || j.messageId || '',\n    seq: (typeof s.seq === 'number') ? s.seq : 0,\n    mediaUrl: url,\n    mediaPreviewUrl: url || j.previewImageUrl || '',\n  } });\n}\n\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        -160
+      ],
+      "id": "e1e2e3e4-0000-4000-8000-000000000004",
+      "name": "Merge Media Info"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        240
+      ],
+      "id": "f1f2f3f4-0000-4000-8000-000000000005",
+      "name": "Pass Through"
+    },
+    {
+      "parameters": {
+        "mode": "append",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        -144,
+        40
+      ],
+      "id": "a1a2a3a4-0000-4000-8000-000000000006",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "operation": "getProfile",
+        "userId": "={{ $json.userId }}"
+      },
+      "type": "@aotoki/n8n-nodes-line-messaging.lineMessaging",
+      "typeVersion": 1,
+      "position": [
+        64,
+        40
+      ],
+      "id": "a9057c32-7eaf-4360-bf1f-c129e5c9c45b",
+      "name": "Get Profile",
+      "credentials": {
+        "lineMessagingApi": {
+          "id": "C1cbIoAIw8iJFTTw",
+          "name": "ChatDesk LINE Messaging"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "/* Forward to ChatDesk incoming.php, carrying media fields for image/video/sticker */\nconst cfg      = $('Set Config').first().json;\nconst events   = $('Merge').all();      // merged items (in merge order)\nconst profiles = $('Get Profile').all();\n  const chCode = $('Shape Channel').first().json.channel_code || 'line';          // getProfile output, 1:1 with merge order\n\nconst out = [];\n\nfor (let i = 0; i < events.length; i++) {\n  const ev = events[i].json || {};\n  const pr = (profiles[i] && profiles[i].json) ? profiles[i].json : {};\n  const profile = (pr.success && pr.profile) ? pr.profile : {};\n  const displayName = profile.displayName || '';\n  const pictureUrl  = profile.pictureUrl || '';\n\n  let botEnabled = true;\n  const payload = {\n    userId: ev.userId,\n    text: ev.text,\n    sender: 'customer',\n    messageId: ev.messageId,\n    messageType: ev.messageType,\n    channel: chCode,\n  };\n  if (ev.mediaUrl) {\n    payload.mediaUrl = ev.mediaUrl;\n    payload.mediaPreviewUrl = ev.mediaPreviewUrl || ev.mediaUrl;\n  }\n  if (ev.stickerPackage && ev.stickerId) {\n    payload.stickerPackage = ev.stickerPackage;\n    payload.stickerId = ev.stickerId;\n  }\n  if (displayName) { payload.displayName = displayName; }\n  if (pictureUrl)  { payload.pictureUrl = pictureUrl; }\n  if (cfg.CHATDESK_SECRET) { payload.secret = cfg.CHATDESK_SECRET; }\n\n  try {\n    const res = await this.helpers.httpRequest({\n      method: 'POST', url: cfg.CHATDESK_URL, json: true, timeout: 20000, body: payload,\n    });\n    botEnabled = !(res && res.botEnabled === false);\n  } catch (err) {\n    botEnabled = true;\n  }\n\n  out.push({ json: {\n    userId: ev.userId,\n    text: ev.text,\n    displayName: displayName,\n    channel: chCode,\n    botEnabled: botEnabled,\n    isText: ev.messageType === 'text',\n  } });\n}\n\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        40
+      ],
+      "id": "16a311f9-1595-4163-8f5c-a4d9fe9e83ca",
+      "name": "Send to ChatDesk"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "if1",
+              "leftValue": "={{ $json.botEnabled }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "if2",
+              "leftValue": "={{ $json.isText }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        480,
+        40
+      ],
+      "id": "0bc4a3fe-51c0-4b16-98c3-dbd26cd4c539",
+      "name": "Bot Can Reply"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ (($('Shape Channel').first().json.persona_system || '') + '\\n\\n' + ($('Attach RAG').first().json.text || '') + '\\n\\n[ข้อมูลจากฐานความรู้ RAG — ใช้ประกอบการตอบ ถ้าไม่เกี่ยวให้ตอบตามปกติ]:\\n' + ($('Attach RAG').first().json.rag_context || '')) }}",
+        "options": {
+          "systemMessage": "=คุณคือผู้ช่วยตอบแชทของร้าน/องค์กรบน LINE (ChatDesk)\nกรุณาตอบลูกค้าด้วยภาษาไทยที่สุภาพ กระชับ และช่วยเหลือได้จริง ตามข้อมูลของร้านที่มีอยู่\nถ้าลูกค้าถามเรื่องที่ไม่อยู่ในข้อมูล ให้แนะนำให้ติดต่อเจ้าหน้าที่หรือตอบว่าไม่ทราบ พร้อมเสนอช่วยเรื่องอื่น\nใช้ถ้อยคำที่เป็นธรรมชาติเหมือนพูดกับลูกค้า ไม่ใช้ศัพท์เทคนิคเกินจำเป็น\nชื่อลูกค้า (ถ้ามี): {{ $('Attach RAG').first().json.displayName || 'ลูกค้าท่านนี้' }}\nเพิ่มเติม: ถ้ามี [ข้อมูลจากฐานความรู้] แนบมา ให้ใช้ข้อมูลนั้นตอบเป็นหลัก (อ้างอิงสั้น ๆ ได้)"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        688,
+        -120
+      ],
+      "id": "ebc88315-37ea-49da-ba36-5ff03fe7b94e",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        736,
+        104
+      ],
+      "id": "c089e572-2297-4e2f-938d-9574cfaad3f2",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "VuE8YX5cbPUw7Ay8",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "/* Take AI/LLM output, attach userId, carry RAG image URLs (public https only, max 4) */\nconst items = $input.all();\nconst out = [];\nlet imgs = [];\ntry { imgs = ($('Attach RAG').first().json.rag_images || []); } catch (err) { imgs = []; }\ntry { const sq = ($('Merge Shop SQL').first().json.sql_images || []); if (Array.isArray(sq)) imgs = imgs.concat(sq); } catch (err2) {}\nif (!Array.isArray(imgs)) imgs = [];\nlet pubBase = '';\ntry { pubBase = ($('Set Config').first().json.PUBLIC_WEB_BASE || '').toString().replace(/\\/$/, ''); } catch (err3) {}\nconst seen = {};\nimgs = imgs.map(u => { u = (u || '').toString().trim(); if (pubBase && /^http:\\/\\/127\\.0\\.0\\.1:8081\\//i.test(u)) u = pubBase + u.slice(21); return u; }).filter(u => /^https:\\/\\//i.test(u) && !seen[u] && (seen[u] = 1)).slice(0, 4);\nfor (let i = 0; i < items.length; i++) {\n  let userId = '';\n  try { userId = $('Send to ChatDesk').itemMatching(i).json.userId || ''; } catch (err) { userId = ''; }\n  const raw = items[i].json.output || items[i].json.text || '';\n  const replyText = String(raw).replace(/<think>[\\s\\S]*?<\\/think>/g, '').trim();\n  if (userId && replyText) { out.push({ json: { userId: userId, replyText: replyText, images: imgs } }); }\n}\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        -120
+      ],
+      "id": "9d9e72fa-7bc1-4bb5-a82a-b802ade7ed40",
+      "name": "Build Reply"
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "to": "={{ $json.userId }}",
+        "messages": {
+          "values": [
+            {
+              "text": "={{ $json.replyText + (($json.images || []).length ? '\\n' + $json.images.join('\\n') : '') }}"
+            }
+          ]
+        }
+      },
+      "type": "@aotoki/n8n-nodes-line-messaging.lineMessaging",
+      "typeVersion": 1,
+      "position": [
+        1104,
+        -120
+      ],
+      "id": "79b6a4cb-01dc-4d8a-acce-b962492bac49",
+      "name": "Send LINE",
+      "credentials": {
+        "lineMessagingApi": {
+          "id": "C1cbIoAIw8iJFTTw",
+          "name": "ChatDesk LINE Messaging"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "/* Save bot reply into ChatDesk so it shows in agent inbox */\nconst cfg = $('Set Config').first().json;\n\nfor (const item of $('Build Reply').all()) {\n  const j = item.json || {};\n  if (!j.userId || !j.replyText) { continue; }\n  const payload = { userId: j.userId, text: j.replyText, sender: 'bot', channel: $('Shape Channel').first().json.channel_code || 'line' };\n  if (cfg.CHATDESK_SECRET) { payload.secret = cfg.CHATDESK_SECRET; }\n  const res = await this.helpers.httpRequest({\n    method: 'POST', url: cfg.CHATDESK_URL, json: true, timeout: 20000, body: payload,\n  });\n  if (!res || res.ok !== true) {\n    throw new Error('ChatDesk save failed: ' + JSON.stringify(res));\n  }\n  const imgs = Array.isArray(j.images) ? j.images : [];\n  for (const u of imgs.slice(0, 4)) {\n    const url = (u || '').toString().trim();\n    if (!/^https:\\/\\//i.test(url)) { continue; }\n    const ipayload = { userId: j.userId, text: url, sender: 'bot', channel: $('Shape Channel').first().json.channel_code || 'line', messageType: 'image', mediaUrl: url, mediaPreviewUrl: url };\n    if (cfg.CHATDESK_SECRET) { ipayload.secret = cfg.CHATDESK_SECRET; }\n    await this.helpers.httpRequest({ method: 'POST', url: cfg.CHATDESK_URL, json: true, timeout: 20000, body: ipayload });\n  }\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1312,
+        -120
+      ],
+      "id": "04c20b5c-44a4-47bc-9793-7c0fc98a9955",
+      "name": "Notify ChatDesk"
+    },
+    {
+      "id": "8b47a19e-7ebc-43b7-93b7-d14e36cb6e06",
+      "name": "RAG Lookup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        120
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:5678/webhook/rag-answer",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"question\": {{ $json.text.toJsonString() }}, \"top_k\": 3, \"group_ids\": {{ JSON.stringify((function(){ try { var g = $('Shape Channel').first().json.group_ids; if (Array.isArray(g)) return g.filter(function(x){ return parseInt(x) > 0; }); if (typeof g === 'string') return JSON.parse(g); } catch(e){} return []; })()) }}, \"session_id\": \"{{ $('Shape Channel').first().json.channel_code }}:{{ $('Merge').first().json.userId }}\"}",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": false
+    },
+    {
+      "id": "e4214c30-77d7-414c-bad4-ac752af22f68",
+      "name": "Merge RAG",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.1,
+      "position": [
+        900,
+        200
+      ],
+      "parameters": {
+        "mode": "append"
+      }
+    },
+    {
+      "id": "066d8da8-06b7-4e59-a703-631ad0e69aab",
+      "name": "Attach RAG",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items = $input.all().map(r => r.json);\nconst orig = items.find(r => r.text !== undefined && r.ok === undefined) || {};\nconst rag = items.find(r => r.ok !== undefined) || {};\nconst rc = (rag.text || '').toString();\nconst rimgs = Array.isArray(rag.images) ? rag.images.map(u => (u || '').toString().trim()).filter(u => u !== '') : [];\nreturn [{ json: { ...orig, rag_context: rc, rag_sources: rag.sources || [], rag_images: rimgs } }];"
+      }
+    },
+    {
+      "id": "bb4dbf68-ae84-4992-a95a-a21edcf5d849",
+      "name": "Get Voice Model",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        368,
+        -120
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE((SELECT value FROM app_settings WHERE key = 'llm.qa'), (SELECT value FROM app_settings WHERE key = 'voice.llm_model'), 'gemini') AS value",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "282f3c1f-41ec-453b-8e8e-2a348048c728",
+      "name": "IF Use Local?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        528,
+        -120
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "d7522003-5a22-47f2-ac9c-35af936ae9aa",
+              "leftValue": "=((() => { try { return $('Get Voice Model').first().json.value; } catch(e) { return 'gemini'; } })() === 'qwen3:4b')",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "7d29f1cb-1dac-4232-89e7-e569997784fb",
+      "name": "Build Ollama Body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const a = $('Attach RAG').first().json;\nconst dn = ((a.displayName || '') + '') || 'ลูกค้าท่านนี้';\nconst SYSJS = \"=คุณคือผู้ช่วยตอบแชทของร้าน/องค์กรบน LINE (ChatDesk)\\nกรุณาตอบลูกค้าด้วยภาษาไทยที่สุภาพ กระชับ และช่วยเหลือได้จริง ตามข้อมูลของร้านที่มีอยู่\\nถ้าลูกค้าถามเรื่องที่ไม่อยู่ในข้อมูล ให้แนะนำให้ติดต่อเจ้าหน้าที่หรือตอบว่าไม่ทราบ พร้อมเสนอช่วยเรื่องอื่น\\nใช้ถ้อยคำที่เป็นธรรมชาติเหมือนพูดกับลูกค้า ไม่ใช้ศัพท์เทคนิคเกินจำเป็น\\nชื่อลูกค้า (ถ้ามี): {{ $json.displayName || 'ลูกค้าท่านนี้' }}\\nเพิ่มเติม: ถ้ามี [ข้อมูลจากฐานความรู้] แนบมา ให้ใช้ข้อมูลนั้นตอบเป็นหลัก (อ้างอิงสั้น ๆ ได้)\";\nconst chj = $('Shape Channel').first().json;\nconst perj = (chj.persona_system || '').trim();\nlet sys;\nif (perj) { sys = perj; }\nelse { sys = SYSJS; sys = sys.replace(/^=/, '').split(\"{{ $json.displayName || 'ลูกค้าท่านนี้' }}\").join(dn); }\nsys += ' /no_think';\nconst sqlBlock = (a.sql_block || '');\nconst content = (a.text || '') + '\\n\\n[ข้อมูลจากฐานความรู้ RAG — ใช้ประกอบการตอบ ถ้าไม่เกี่ยวให้ตอบตามปกติ]:\\n' + (a.rag_context || '')\n  + (sqlBlock ? '\\n\\n[ข้อมูลสดจากฐานข้อมูลร้าน — ข้อเท็จจริง ต้องยึดตัวเลขราคา/สต็อก/ชื่อร้านตามนี้เท่านั้น ห้ามดึงตัวเลขจากแถวอื่นหรือแต่ง spec เพิ่ม]:\\n' + sqlBlock : '');\nreturn [{ json: { system: sys, messages: [{ role: 'user', content: content }] } }];"
+      }
+    },
+    {
+      "id": "b3bf47f4-e7cd-494b-8743-c7cbb0575f30",
+      "name": "Ollama Local",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        848,
+        40
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\": \"qwen3:4b-instruct\", \"stream\": false, \"options\": {\"temperature\": 0.7, \"num_predict\": 512}, \"system\": {{ $json.system.toJsonString() }}, \"messages\": {{ $json.messages.toJsonString() }}}",
+        "options": {
+          "timeout": 120000
+        }
+      }
+    },
+    {
+      "id": "7c2aaf50-f1e0-47bb-a65c-930f7afa96b4",
+      "name": "Shape Ollama Out",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const it = $input.first().json;\nlet t = '';\ntry { t = ((it.message || {}).content || '').toString(); } catch(e) {}\nt = t.replace(/^[\\s\\S]*?<\\/think>/, '').replace(/<think>[\\s\\S]*?<\\/think>/g, '').trim();\nif (!t) throw new Error('Local LLM ไม่ตอบ');\nreturn [{ json: { output: t.slice(0, 2000) } }];"
+      }
+    },
+    {
+      "id": "a9521a12-8655-4d55-a936-9d55bd9821c8",
+      "name": "Q Channel",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        120,
+        320
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const m = $('Merge').first().json;\nconst dest = (m.destination || '').toString().replace(/'/g, \"''\");\nconst sel = `SELECT m.channel_code, COALESCE(m.persona_system, '') AS persona_system, COALESCE((SELECT json_agg(group_id ORDER BY group_id) FROM channel_rag_groups WHERE channel_code = m.channel_code), '[]') AS group_ids, COALESCE(m.line_channel_token, '') AS line_channel_token FROM channel_map m`;\nconst sql = `SELECT COALESCE((SELECT json_agg(row_to_json(t)) FROM (${sel} WHERE (m.line_bot_id = '${dest}' OR (m.channel_code = 'line' AND NOT EXISTS (SELECT 1 FROM channel_map WHERE line_bot_id = '${dest}'))) ORDER BY (m.line_bot_id = '${dest}') DESC LIMIT 1) t), '[]') AS rows`;\nreturn [{ json: { sql: sql } }];"
+      }
+    },
+    {
+      "id": "3a97b856-5722-4eab-9441-02e850f1987b",
+      "name": "Run Channel",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        280,
+        320
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "e41e3d4e-4cd1-4a86-89d2-1140745f0cc2",
+      "name": "Shape Channel",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        320
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const r0 = $input.first().json;\nlet rows = r0.rows || [];\nif (typeof rows === 'string') { try { rows = JSON.parse(rows); } catch(e) { rows = []; } }\nconst r = rows[0] || {};\nconst parseIds = function(v){ try {\n  if (Array.isArray(v)) return v.map(function(x){ return parseInt(x); }).filter(function(x){ return x > 0; });\n  if (typeof v === 'string' && v.trim() !== '') return JSON.parse(v).map(function(x){ return parseInt(x); }).filter(function(x){ return x > 0; });\n} catch(e){} return []; };\nreturn [{ json: {\n  channel_code: (r.channel_code || 'line').toString(),\n  group_ids: parseIds(r.group_ids),\n  persona_system: (r.persona_system || '').toString(),\n  line_channel_token: (r.line_channel_token || '').toString() } }];"
+      }
+    },
+    {
+      "id": "7559735a-781d-4b0b-a918-35d55a2441bb",
+      "name": "IF Has Token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1040,
+        -120
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "ceb8c479-98c5-4b8a-9163-d653884b1bab",
+              "leftValue": "=((($('Shape Channel').first().json.line_channel_token || '') !== ''))",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "be54f8e2-8367-4fcf-8338-a93452dc9fe5",
+      "name": "Push LINE",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        -260
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.line.me/v2/bot/message/push",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$('Shape Channel').first().json.line_channel_token}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {to: $json.userId, messages: [{type: 'text', text: $json.replyText}].concat((($json.images || []).slice(0, 4)).map(u => ({type: 'image', originalContentUrl: u, previewImageUrl: u}))) } }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "55259ec8-428e-4f95-9bbb-c515f31b77ce",
+      "name": "Shop SQL Lookup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:5678/webhook/api-shop-sql",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"text\": {{ $json.text.toJsonString() }}, \"userId\": {{ $json.userId.toJsonString() }}, \"history\": []}",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": false
+    },
+    {
+      "id": "f77c428c-7fa6-4409-b96e-052494217de1",
+      "name": "Merge Shop SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "/* Merge Attach RAG item with Shop SQL result; decide deterministic SQL reply */\nconst a = $('Attach RAG').first().json;\nlet s = {};\ntry { s = $('Shop SQL Lookup').first().json || {}; } catch (e) { s = {}; }\nconst sql_rows = parseInt(s.rows) || 0;\nconst sql_answer = (s.answer || '').toString();\nconst sql_block = (s.block || '').toString();\nlet sql_images = [];\ntry {\n  const arr = s.images;\n  if (Array.isArray(arr)) sql_images = arr.map(u => (u || '').toString().trim()).filter(u => /^https?:\\/\\//i.test(u)).slice(0, 4);\n} catch (e2) { sql_images = []; }\nconst adviceQ = /(\\u0e41\\u0e19\\u0e30\\u0e19\\u0e33|\\u0e40\\u0e1b\\u0e23\\u0e35\\u0e22\\u0e1a\\u0e40\\u0e17\\u0e35\\u0e22\\u0e1a|\\u0e40\\u0e1b\\u0e23\\u0e35\\u0e22\\u0e1a|\\u0e04\\u0e38\\u0e49\\u0e21|\\u0e14\\u0e35\\u0e44\\u0e2b\\u0e21|\\u0e40\\u0e25\\u0e37\\u0e2d\\u0e01|\\u0e15\\u0e31\\u0e27\\u0e44\\u0e2b\\u0e19|\\u0e23\\u0e38\\u0e48\\u0e19\\u0e44\\u0e2b\\u0e19|\\u0e14\\u0e35\\u0e01\\u0e27\\u0e48\\u0e32)/.test(a.text || '');\nconst sql_direct = sql_rows > 0 && sql_answer !== '' && !adviceQ;\nreturn [{ json: { ...a, sql_block, sql_answer, sql_images, sql_rows, sql_direct } }];"
+      }
+    },
+    {
+      "id": "a93d5004-634e-47e8-8556-6c03180fff88",
+      "name": "SQL Direct Answer?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1760,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c4fbba83-4c92-480f-9f7c-25fa2301b0fe",
+              "leftValue": "={{ $json.sql_direct }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "88153a97-0fe8-42df-a2e1-ff1cacadcf1b",
+      "name": "Shape SQL Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        60
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "/* Deterministic product answer from Shop SQL (skip LLM) */\nconst m = $('Merge Shop SQL').first().json;\nreturn [{ json: { output: (m.sql_answer || '').toString().slice(0, 2000) } }];"
+      }
+    },
+    {
+      "id": "51ca4203-3f77-48d7-bc5a-967f3532a925",
+      "name": "Odoo ChatLead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        492,
+        40
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:5678/webhook/api-odoo-lead",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"op\": \"chat\", \"channel\": {{ $json.channel.toJsonString() }}, \"external_user_id\": {{ $json.userId.toJsonString() }}, \"display_name\": {{ ($json.displayName || \"\").toJsonString() }}, \"text\": {{ $json.text.toJsonString() }}}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": false
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Respond 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond 200": {
+      "main": [
+        [
+          {
+            "node": "Set Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config": {
+      "main": [
+        [
+          {
+            "node": "Parse Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Events": {
+      "main": [
+        [
+          {
+            "node": "Has Media Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Media Content": {
+      "main": [
+        [
+          {
+            "node": "Get Media Content",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pass Through",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Media Content": {
+      "main": [
+        [
+          {
+            "node": "Upload Media",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Media": {
+      "main": [
+        [
+          {
+            "node": "Merge Media Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Media Info": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass Through": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Get Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Profile": {
+      "main": [
+        [
+          {
+            "node": "Q Channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to ChatDesk": {
+      "main": [
+        [
+          {
+            "node": "Bot Can Reply",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Odoo ChatLead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bot Can Reply": {
+      "main": [
+        [
+          {
+            "node": "RAG Lookup",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge RAG",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Build Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Reply": {
+      "main": [
+        [
+          {
+            "node": "IF Has Token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send LINE": {
+      "main": [
+        [
+          {
+            "node": "Notify ChatDesk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RAG Lookup": {
+      "main": [
+        [
+          {
+            "node": "Merge RAG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge RAG": {
+      "main": [
+        [
+          {
+            "node": "Attach RAG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach RAG": {
+      "main": [
+        [
+          {
+            "node": "Shop SQL Lookup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Voice Model": {
+      "main": [
+        [
+          {
+            "node": "IF Use Local?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Use Local?": {
+      "main": [
+        [
+          {
+            "node": "Build Ollama Body",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Ollama Body": {
+      "main": [
+        [
+          {
+            "node": "Ollama Local",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Local": {
+      "main": [
+        [
+          {
+            "node": "Shape Ollama Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Ollama Out": {
+      "main": [
+        [
+          {
+            "node": "Build Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Q Channel": {
+      "main": [
+        [
+          {
+            "node": "Run Channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Channel": {
+      "main": [
+        [
+          {
+            "node": "Shape Channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Channel": {
+      "main": [
+        [
+          {
+            "node": "Send to ChatDesk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Has Token?": {
+      "main": [
+        [
+          {
+            "node": "Push LINE",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send LINE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Push LINE": {
+      "main": [
+        [
+          {
+            "node": "Notify ChatDesk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shop SQL Lookup": {
+      "main": [
+        [
+          {
+            "node": "Merge Shop SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Shop SQL": {
+      "main": [
+        [
+          {
+            "node": "SQL Direct Answer?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SQL Direct Answer?": {
+      "main": [
+        [
+          {
+            "node": "Shape SQL Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Voice Model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape SQL Reply": {
+      "main": [
+        [
+          {
+            "node": "Build Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "saveDataSuccessExecution": null
+  },
+  "pinData": {}
+}

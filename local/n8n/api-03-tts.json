@@ -1,0 +1,281 @@
+{
+  "_export": {
+    "workflowId": "jmo9rK5TmJPaIQPv",
+    "active": true,
+    "exportedAt": "2026-10-02T20:53:37Z",
+    "note": "Secrets replaced with __PLACEHOLDERS__. See README."
+  },
+  "name": "ChatDesk API-03 TTS (neural+piper base64)",
+  "nodes": [
+    {
+      "id": "c1a61a92-8c89-4f26-a3eb-57e977970656",
+      "name": "Webhook TTS",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api-tts",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "0775620e-2fa4-4b42-bb8e-9393653918dd"
+    },
+    {
+      "id": "01fe69ba-7876-4711-a005-794dd5b560f2",
+      "name": "Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const b = $input.first().json.body || $input.first().json || {};\nconst userId = (b.userId || '').toString();\nif (!/^WEB_[A-Za-z0-9_-]{1,64}$/.test(userId)) throw new Error('userId ไม่ถูกต้อง');\nlet text = (b.text || '').toString().trim().slice(0, 600);\nif (!text) throw new Error('ข้อความว่างเปล่า');\nlet speed = parseFloat(b.speed);\nif (!(speed >= 0.7 && speed <= 1.2)) speed = 0.9;\nreturn [{ json: { text: text, speed: speed } }];"
+      }
+    },
+    {
+      "id": "be59d343-672a-448a-8108-0f4de93d76a2",
+      "name": "Get TTS Engine",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        520,
+        160
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE((SELECT value FROM app_settings WHERE key = 'tts.engine'), 'auto') AS value",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "87822a18-4092-4c88-997a-cce31bc56923",
+      "name": "Neural TTS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        640,
+        160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8080/tts-neural",
+        "options": {
+          "timeout": 90000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"text\": {{ $('Validate').first().json.text.toJsonString() }}, \"speed\": {{ $('Validate').first().json.speed }}}"
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": false
+    },
+    {
+      "id": "ba0ebfd0-dd6b-444d-bc86-881299b0f0bd",
+      "name": "Pick TTS",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const pre = $('Validate').first().json;\nconst mode = (() => { try { return $('Get TTS Engine').first().json.value || 'auto'; } catch(e) { return 'auto'; } })();\nif (mode === 'piper') {\n  return [{ json: { ok: false, engine: 'piper', text: pre.text, speed: pre.speed } }];\n}\nconst bin = $input.first().binary || {};\nconst f = bin.audio || bin.file || bin.data || Object.values(bin)[0];\nif (f) {\n  const key = Object.keys(bin).find(k => bin[k] === f) || 'data';\n  const buf = await this.helpers.getBinaryDataBuffer(0, key);\n  if (buf && buf.length && buf.length >= 1000) {\n    return [{ json: { ok: true, audio: buf.toString('base64'), mime: 'audio/wav', engine: 'neural' } }];\n  }\n}\nreturn [{ json: { ok: false, engine: 'piper', text: pre.text, speed: pre.speed, error: 'neural ล้มเหลว' } }];"
+      }
+    },
+    {
+      "id": "23e887dc-2809-4d37-a819-1b326e07bfa3",
+      "name": "IF Piper Fallback?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1080,
+        160
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "6a4b89d3-386a-495e-bbb9-54979a1cc216",
+              "leftValue": "={{ (($json.ok !== true && $('Get TTS Engine').first().json.value !== 'neural') || $('Get TTS Engine').first().json.value === 'piper') }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "fdeec4fc-c200-425a-95f6-0129a7e81de2",
+      "name": "Piper Synth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        640,
+        480
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8080/tts",
+        "options": {
+          "timeout": 90000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"text\": {{ $('Validate').first().json.text.toJsonString() }}, \"speed\": {{ $('Validate').first().json.speed }}}"
+      }
+    },
+    {
+      "id": "d42df53e-8abd-47ab-bc6d-bb91f687ebbf",
+      "name": "To Base64",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const bin = $input.first().binary || {};\nconst f = bin.audio || bin.file || bin.data || Object.values(bin)[0];\nif (!f) return [{ json: { ok: false, error: 'TTS ไม่ตอบเป็นไฟล์เสียง' } }];\nconst buf = await this.helpers.getBinaryDataBuffer(0, Object.keys(bin).find(k => bin[k] === f) || 'data');\nif (!buf || !buf.length || buf.length < 1000) return [{ json: { ok: false, error: 'ไฟล์เสียงว่างเปล่า' } }];\nreturn [{ json: { ok: true, audio: buf.toString('base64'), mime: 'audio/wav', engine: 'piper' } }];"
+      }
+    },
+    {
+      "id": "a962ed89-631b-498e-9474-820711e4752c",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1300,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook TTS": {
+      "main": [
+        [
+          {
+            "node": "Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate": {
+      "main": [
+        [
+          {
+            "node": "Get TTS Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get TTS Engine": {
+      "main": [
+        [
+          {
+            "node": "Neural TTS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Neural TTS": {
+      "main": [
+        [
+          {
+            "node": "Pick TTS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Piper Fallback?": {
+      "main": [
+        [
+          {
+            "node": "Piper Synth",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick TTS": {
+      "main": [
+        [
+          {
+            "node": "IF Piper Fallback?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Piper Synth": {
+      "main": [
+        [
+          {
+            "node": "To Base64",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "To Base64": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

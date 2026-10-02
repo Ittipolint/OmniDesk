@@ -1,0 +1,504 @@
+{
+  "_export": {
+    "workflowId": "CjCI13k1E12J095t",
+    "active": true,
+    "exportedAt": "2026-10-02T20:53:37Z",
+    "note": "Secrets replaced with __PLACEHOLDERS__. See README."
+  },
+  "name": "ChatDesk API-04 Send (agent reply central)",
+  "nodes": [
+    {
+      "id": "8de85ad6-0deb-4a51-a645-b2c6eabd8111",
+      "name": "Webhook Send",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chatdesk-send",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "bf887b30-4594-4f79-95e8-c0abfda13216"
+    },
+    {
+      "id": "069d09c4-eb5a-4ef1-a55d-a55a2dfcdb0b",
+      "name": "Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const b = $input.first().json.body || $input.first().json || {};\nconst convId = parseInt(b.conversationId) || 0;\nif (!convId) throw new Error('missing conversationId');\nconst type = ['text','image','video','sticker'].includes(b.type) ? b.type : 'text';\nconst text = (b.text || '').toString().slice(0, 2000);\nif (type === 'text' && !text.trim()) throw new Error('กรุณาพิมพ์ข้อความ');\nif ((type === 'image' || type === 'video') && !(b.mediaUrl || '').toString().match(/^https?:\\/\\//i)) throw new Error('ไม่พบ URL ของไฟล์');\nif (type === 'sticker' && (!(b.stickerPackage || '') || !(b.stickerId || ''))) throw new Error('ข้อมูลสติกเกอร์ไม่ครบ');\nreturn [{ json: { conversationId: convId, type: type, text: text,\n  mediaUrl: (b.mediaUrl || '').toString(), mediaPreviewUrl: (b.mediaPreviewUrl || '').toString(),\n  stickerPackage: (b.stickerPackage || '').toString(), stickerId: (b.stickerId || '').toString() } }];"
+      }
+    },
+    {
+      "id": "e8d86726-ec60-4ef9-85e9-344ec86f8148",
+      "name": "Build Mute SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const j = $input.first().json;\nreturn [{ json: { ...j, mute_sql: `UPDATE cd_conversations SET bot_enabled = 0 WHERE id = ${j.conversationId} AND bot_enabled = 1` } }];"
+      }
+    },
+    {
+      "id": "0dd3bd19-ebda-4c7d-bd7a-2d12083f783e",
+      "name": "Mute Bot",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        860,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.mute_sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "68c2c240-02bd-45b3-a472-940772e5b8b0",
+      "name": "Build Insert SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1080,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const j = $('Build Mute SQL').first().json;\nconst q = (s) => (s || '').toString().replace(/'/g, \"''\");\nconst body = (j.text !== '' && j.text !== undefined) ? j.text : ('[' + j.type + ']');\nconst sql = `INSERT INTO cd_messages (conversation_id, sender, content, message_type, media_url, media_preview_url, sticker_package, sticker_id, status, delivered_at, created_at) VALUES (${j.conversationId}, 'agent', '${q(body)}', '${j.type}', ${j.mediaUrl ? `'${q(j.mediaUrl.slice(0,500))}'` : 'NULL'}, ${j.mediaPreviewUrl ? `'${q(j.mediaPreviewUrl.slice(0,500))}'` : 'NULL'}, ${j.stickerPackage ? `'${q(j.stickerPackage.slice(0,50))}'` : 'NULL'}, ${j.stickerId ? `'${q(j.stickerId.slice(0,50))}'` : 'NULL'}, 'ok', NOW(), NOW()) RETURNING id`;\nreturn [{ json: { ...j, sql: sql } }];"
+      }
+    },
+    {
+      "id": "3b3a0cc3-e4a1-42d7-8856-ba0eb48fac6f",
+      "name": "Insert Agent Msg",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1220,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "d96b122a-d9cc-41f1-a388-3d54705996d6",
+      "name": "Lookup Conversation",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1400,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT id, channel, external_user_id AS \"userId\" FROM cd_conversations WHERE id = {{ $('Build Insert SQL').first().json.conversationId }} LIMIT 1",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "1c680e23-02af-4267-9781-323c3a6add82",
+      "name": "Require Conv",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const rows = $input.all();\nif (!rows.length) throw new Error('ไม่พบห้องแชทนี้');\nreturn rows;"
+      }
+    },
+    {
+      "id": "26adac04-9e7c-4515-b69b-342e541b5ba4",
+      "name": "Q Channel Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const c = $('Lookup Conversation').first().json;\nconst ch = (c.channel || 'line').toString().replace(/'/g, \"''\");\nreturn [{ json: { sql: `SELECT COALESCE((SELECT line_channel_token FROM channel_map WHERE channel_code = '${ch}'), '') AS line_channel_token` } }];"
+      }
+    },
+    {
+      "id": "e99eb767-6965-49f6-9942-7217c5ebbd1b",
+      "name": "Run Channel Token",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1680,
+        480
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "e178056f-86aa-4e8f-a38d-78bd6c302ef1",
+      "name": "IF LINE Channel?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1300,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "2168b1a6-af52-4ec7-93de-fece63648e06",
+              "leftValue": "={{ /^line/.test(($('Lookup Conversation').first().json.channel || '')) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "795daf94-bf8a-4929-be8e-fea63fc38bb8",
+      "name": "Push via chatdesk-push",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1740,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:5678/webhook/chatdesk-push",
+        "options": {
+          "timeout": 60000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"userId\": {{ $('Lookup Conversation').first().json.userId.toJsonString() }}, \"text\": {{ $('Validate').first().json.text.toJsonString() }}, \"type\": {{ $('Validate').first().json.type.toJsonString() }}, \"mediaUrl\": {{ $('Validate').first().json.mediaUrl.toJsonString() }}, \"mediaPreviewUrl\": {{ $('Validate').first().json.mediaPreviewUrl.toJsonString() }}, \"stickerPackage\": {{ $('Validate').first().json.stickerPackage.toJsonString() }}, \"stickerId\": {{ $('Validate').first().json.stickerId.toJsonString() }}, \"lineToken\": {{ $('Run Channel Token').first().json.line_channel_token.toJsonString() }}}"
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": false
+    },
+    {
+      "id": "1d10a329-07cf-47c8-aedc-f3c618aed00b",
+      "name": "Shape Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1960,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const msg = $('Insert Agent Msg').first().json;\nconst conv = $('Lookup Conversation').first().json;\nreturn [{ json: { ok: true, messageId: msg.id || 0, conversationId: conv.id || 0,\n  botMuted: true, time: new Date().toISOString().slice(11, 16) } }];"
+      }
+    },
+    {
+      "id": "2aaa0f32-6e38-4ca2-a41b-2fd30d8f25f3",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1960,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "17dd7b9a-1281-4675-87bd-e1f3bcdc405d",
+      "name": "IF FB Channel?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1520,
+        460
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "2627271a-2de8-4699-bddd-4c18e7c39cb8",
+              "leftValue": "={{ /^fb/.test(($('Lookup Conversation').first().json.channel || '')) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "7c201bc2-eff2-4e98-b8b6-db86bafb7a29",
+      "name": "Push FB",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1740,
+        460
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:5678/webhook/117be6a7-0f8b-49f1-b5cb-3fb4852934de",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"userId\": {{ $('Lookup Conversation').first().json.userId.toJsonString() }}, \"text\": {{ $('Validate').first().json.text.toJsonString() }}, \"type\": {{ $('Validate').first().json.type.toJsonString() }}, \"mediaUrl\": {{ $('Validate').first().json.mediaUrl.toJsonString() }}, \"mediaPreviewUrl\": {{ $('Validate').first().json.mediaPreviewUrl.toJsonString() }}, \"stickerPackage\": {{ $('Validate').first().json.stickerPackage.toJsonString() }}, \"stickerId\": {{ $('Validate').first().json.stickerId.toJsonString() }}}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": false
+    }
+  ],
+  "connections": {
+    "Webhook Send": {
+      "main": [
+        [
+          {
+            "node": "Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate": {
+      "main": [
+        [
+          {
+            "node": "Build Mute SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Mute SQL": {
+      "main": [
+        [
+          {
+            "node": "Mute Bot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mute Bot": {
+      "main": [
+        [
+          {
+            "node": "Build Insert SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Insert SQL": {
+      "main": [
+        [
+          {
+            "node": "Insert Agent Msg",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Agent Msg": {
+      "main": [
+        [
+          {
+            "node": "Lookup Conversation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Conversation": {
+      "main": [
+        [
+          {
+            "node": "Require Conv",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Require Conv": {
+      "main": [
+        [
+          {
+            "node": "Q Channel Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Q Channel Token": {
+      "main": [
+        [
+          {
+            "node": "Run Channel Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF LINE Channel?": {
+      "main": [
+        [
+          {
+            "node": "Push via chatdesk-push",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IF FB Channel?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Channel Token": {
+      "main": [
+        [
+          {
+            "node": "IF LINE Channel?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Push via chatdesk-push": {
+      "main": [
+        [
+          {
+            "node": "Shape Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Result": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF FB Channel?": {
+      "main": [
+        [
+          {
+            "node": "Push FB",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Shape Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Push FB": {
+      "main": [
+        [
+          {
+            "node": "Shape Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

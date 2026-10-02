@@ -1,0 +1,20 @@
+services:
+  odoo:
+    image: odoo:18
+    container_name: chatdesk-odoo
+    ports:
+      - "127.0.0.1:8069:8069"
+    volumes:
+      - ./config:/etc/odoo
+      - ./addons:/mnt/extra-addons
+      - ./data:/var/lib/odoo
+    environment:
+      - TZ=Asia/Bangkok
+    networks:
+      - default
+      - ai-stack_default
+    restart: unless-stopped
+
+networks:
+  ai-stack_default:
+    external: true

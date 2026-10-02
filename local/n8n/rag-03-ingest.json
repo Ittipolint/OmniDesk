@@ -1,0 +1,829 @@
+{
+  "_export": {
+    "workflowId": "zudtl8dVs8TfcUBj",
+    "active": true,
+    "exportedAt": "2026-10-02T20:53:38Z",
+    "note": "Secrets replaced with __PLACEHOLDERS__. See README."
+  },
+  "name": "ChatDesk RAG-03 Ingest (Gemini embed 768 + OCR)",
+  "nodes": [
+    {
+      "id": "d0b413fe-c247-4f1d-bd05-d379758866ac",
+      "name": "Webhook Ingest",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rag-ingest",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "247f3ad5-7c38-450f-898a-3c209608bb1d"
+    },
+    {
+      "id": "769fb849-b926-491f-a2ad-8e0a9453a147",
+      "name": "Route + Flags",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const inp = $input.first();\nconst b = inp.json.body || inp.json || {};\nconst kind = ['text','pdf','image','url'].includes(b.type) ? b.type : 'text';\nconst bin = inp.binary || {};\nconst hasFile = Object.keys(bin).length > 0;\nconst sq = (s) => (s || '').toString().replace(/'/g, \"''\");\nconst group_id = parseInt(b.group_id) || 0;\nif (!group_id) throw new Error('missing group_id');\nreturn [{ json: {\n  kind: kind, group_id: group_id,\n  group_name: (b.group_name || '').toString(),\n  title: (b.title || '').toString().slice(0, 255),\n  title_q: sq(b.title).slice(0, 255),\n  text: (b.text || '').toString(),\n  url: (b.url || '').toString(),\n  image_url: (b.image_url || '').toString(),\n  url_q: sq(b.url).slice(0, 2000),\n  imgurl_q: sq(b.image_url).slice(0, 2000),\n  is_url: kind === 'url', has_file: hasFile,\n  has_imgurl: /^https?:\\/\\//i.test((b.image_url || '').toString())\n}, binary: bin }];"
+      }
+    },
+    {
+      "id": "7067b5ea-64de-4a64-9d0e-6e9324f54a99",
+      "name": "IF Is URL?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        640,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "9c9d3407-dec1-4f6c-94bb-27d44d030785",
+              "leftValue": "={{ $json.is_url }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "ef266c41-c0ec-4b27-b734-4df35609cc73",
+      "name": "Fetch URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        200
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.url }}",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "fe74087b-726a-461a-b82e-6f6d42f3d457",
+      "name": "Strip Tags",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1060,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const it = $input.first().json;\nconst flags = $('Route + Flags').first().json;\nlet t = ((it.data || it.text || '')).toString();\nt = t.replace(/<script[\\s\\S]*?<\\/script>/gi, ' ').replace(/<style[\\s\\S]*?<\\/style>/gi, ' ');\nt = t.replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim();\nreturn [{ json: { ...flags, text: t.slice(0, 60000) } }];"
+      }
+    },
+    {
+      "id": "7e9abe0c-35d7-4f28-8771-808a933c467d",
+      "name": "IF Has File?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        860,
+        420
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "77039a4a-f621-4426-af56-8492aadc4901",
+              "leftValue": "={{ $json.has_file }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b0be0b8b-69bb-44eb-94ed-165ba4b97277",
+      "name": "IF Has Image URL?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1060,
+        540
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cf99003b-28ac-4b4f-8f3d-23d0b7860011",
+              "leftValue": "={{ $json.has_imgurl }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c1899b79-4f1e-419e-a66c-ee35ec246be3",
+      "name": "Download Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1260,
+        540
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.image_url }}",
+        "options": {
+          "timeout": 60000,
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "6045db74-d8af-4129-baf4-26b375f19945",
+      "name": "Reattach Flags",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1460,
+        540
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const inp = $input.first();\nconst flags = $('Route + Flags').first().json;\nreturn [{ json: { ...flags }, binary: inp.binary }];"
+      }
+    },
+    {
+      "id": "a55c4942-804a-4b59-8410-d78eefbb89d1",
+      "name": "Build Gemini OCR",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1460,
+        420
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const it = $input.first().json;\nconst bin = $input.first().binary || {};\nconst fname = bin.file ? 'file' : (bin.data ? 'data' : Object.keys(bin)[0]);\nif (!fname) throw new Error('no file binary (field name must be file)');\nconst buf = await this.helpers.getBinaryDataBuffer(0, fname);\nconst f = bin[fname] || {};\nconst prompt = it.kind === 'image'\n  ? 'พากย์ภาพนี้เป็นภาษาไทย 1-2 ประโยค แล้วถอดข้อความตัวอักษรที่เห็นในภาพทั้งหมด (OCR) ตอบเป็นข้อความล้วน'\n  : 'ถอดข้อความทั้งหมดในเอกสาร PDF นี้เป็นภาษาไทย คงโครงสร้างหัวข้อและตัวเลขไว้ครบ ตอบเป็นข้อความล้วน';\nreturn [{ json: { ...it, _mime: f.mimeType || 'application/octet-stream', _data: buf.toString('base64'),\n  _prompt: (it.kind === 'image' && it.text) ? (it.text + '\\n\\n' + prompt) : prompt } }];"
+      }
+    },
+    {
+      "id": "f1d5e5d5-0f86-4d92-82a0-05311947116d",
+      "name": "Get OCR Engine",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1560,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE((SELECT value FROM app_settings WHERE key = 'ocr.engine'), 'gemini') AS value",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "947ec112-f692-4c25-b786-947b62f7b63d",
+      "name": "IF Local OCR?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1720,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "a813d409-08c7-4e08-983f-bb90fa5cbd4c",
+              "leftValue": "={{ ((() => { try { return $('Get OCR Engine').first().json.value; } catch(e) { return 'gemini'; } })() === 'easyocr') }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "19534d9c-db4f-40a7-9eba-5bf10b8ffc53",
+      "name": "Get Gemini Key",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1560,
+        540
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE((SELECT value FROM app_settings WHERE key = 'gemini.api_key'), '__GEMINI_API_KEY__') AS value",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "41ecf7d0-4523-4ca6-8be7-9b54050d4e58",
+      "name": "Gemini OCR",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1660,
+        420
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + $('Get Gemini Key').first().json.value }}",
+        "options": {
+          "timeout": 120000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"contents\": [{\"parts\": [{\"text\": {{ $('Build Gemini OCR').first().json._prompt.toJsonString() }}}, {\"inline_data\": {\"mime_type\": {{ $('Build Gemini OCR').first().json._mime.toJsonString() }}, \"data\": {{ $('Build Gemini OCR').first().json._data.toJsonString() }} }}]}]}"
+      }
+    },
+    {
+      "id": "e440878c-a8d5-42af-a39b-d53790d5fe96",
+      "name": "EasyOCR Local",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1920,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8080/ocr-file",
+        "options": {
+          "timeout": 600000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"file_b64\": {{ $('Build Gemini OCR').first().json._data.toJsonString() }}, \"mime\": {{ $('Build Gemini OCR').first().json._mime.toJsonString() }}, \"kind\": {{ $('Build Gemini OCR').first().json.kind.toJsonString() }}}"
+      }
+    },
+    {
+      "id": "65a54d23-5202-4423-9d2b-4dbcadd5ce32",
+      "name": "Shape Local OCR",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2120,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const it = $input.first().json;\nconst flags = $('Build Gemini OCR').first().json;\nconst cap = (flags.kind === 'image' && flags.text) ? flags.text.toString().trim() : '';\nlet t = cap ? (cap + '\\n\\n') : '';\ntry { t += (it.text || '').toString(); } catch(e) {}\nif (!t.trim()) throw new Error('OCR ว่างเปล่า');\nreturn [{ json: { kind: flags.kind, group_id: flags.group_id, group_name: flags.group_name,\n  title: flags.title, image_url: flags.image_url, text: t.slice(0, 60000) } }];"
+      }
+    },
+    {
+      "id": "3f25d8b6-1ad9-4709-b8d8-8c7fb7ff0527",
+      "name": "Set OCR Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1860,
+        420
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const it = $input.first().json;\nconst flags = $('Build Gemini OCR').first().json;\nconst cap = (flags.kind === 'image' && flags.text) ? flags.text.toString().trim() : '';\nlet t = cap ? (cap + '\\n\\n') : '';\ntry { t += it.candidates[0].content.parts.map(p => p.text || '').join('\\n'); } catch(e) {}\nif (!t.trim()) throw new Error('OCR ว่างเปล่า');\nreturn [{ json: { kind: flags.kind, group_id: flags.group_id, group_name: flags.group_name,\n  title: flags.title, image_url: flags.image_url, text: t.slice(0, 60000) } }];"
+      }
+    },
+    {
+      "id": "811a1c5d-9f59-45f6-8d9f-42eafb4a609a",
+      "name": "Build Source SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2260,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const j = $input.first().json;\nconst q = (s) => (s || '').toString().replace(/'/g, \"''\");\nconst gid = parseInt(j.group_id) || 0;\nif (!gid) throw new Error('missing group_id');\nconst img = (j.image_url || '').toString();\nconst ins = `INSERT INTO rag_sources (group_id, source_type, title, source_ref, image_url) VALUES (${gid}, '${q(j.kind) || 'text'}', '${q((j.title || '').slice(0, 255))}', 'webhook', ${img ? `'${q(img.slice(0, 2000))}'` : 'NULL'}) RETURNING id`;\nconst sql = `WITH gk AS (SELECT COALESCE((SELECT value FROM app_settings WHERE key = 'gemini.api_key'), '__GEMINI_API_KEY__') AS gkey), ins AS (${ins}) SELECT (SELECT id FROM ins) AS id, (SELECT gkey FROM gk) AS gkey`;\nreturn [{ json: { sql: sql } }];"
+      }
+    },
+    {
+      "id": "49675f65-8f29-42be-9ccb-8ecdc700ec56",
+      "name": "Save Source Row",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        2360,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "06c74bbb-8cad-4331-83e4-91ab74c99681",
+      "name": "Chunk + Attach Meta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2460,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const src = $input.first().json;\nconst srcId = src.id || null;\nconst gkey = (src.gkey || '').toString();\n// text/flags come from whichever branch fired (direct edges = OR semantics)\nlet m = null;\nfor (const nm of ['Set URL Text', 'Set OCR Text', 'Shape Local OCR']) {\n  try { const c = $(nm).first().json; if (c && c.text) { m = c; break; } } catch(e) {}\n}\nif (!m) { m = $('Route + Flags').first().json; }\nconst text = (m.text || '').toString();\nif (!text.trim()) throw new Error('ไม่มีข้อความให้ embedding');\nconst SIZE = 1000, OVER = 200;\nconst chunks = text.length <= SIZE ? [text] : [];\nif (!chunks.length) { let s = 0; while (s < text.length) { chunks.push(text.slice(s, s + SIZE)); s += SIZE - OVER; } }\nconst meta = { source_id: srcId, group_id: m.group_id, group_name: m.group_name, title: m.title,\n  image_url: m.image_url || null, source_type: m.kind };\nreturn chunks.map((c, i) => ({ json: { text: c, gkey: gkey, metadata: { ...meta, chunk_no: i } } }));"
+      }
+    },
+    {
+      "id": "6f984954-3f8c-4a9c-bc24-e8b84b0fd80e",
+      "name": "Embed Chunk (Gemini 768)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2660,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=' + $json.gkey }}",
+        "options": {
+          "timeout": 60000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"content\": {\"parts\": [{\"text\": {{ $json.text.toJsonString() }} }]}, \"taskType\": \"RETRIEVAL_DOCUMENT\", \"outputDimensionality\": 768}"
+      }
+    },
+    {
+      "id": "04904b3b-eace-45d8-9a73-78e63de546b4",
+      "name": "Join Emb+Chunk",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2660,
+        480
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const chunks = ($('Chunk + Attach Meta').all() || []).map(r => r.json);\nconst embs = ($('Embed Chunk (Gemini 768)').all() || []).map(r => r.json);\nif (!chunks.length || chunks.length !== embs.length) throw new Error('chunk/embed mismatch');\nreturn chunks.map((c, i) => ({ json: { ...c, embedding: embs[i].embedding } }));"
+      }
+    },
+    {
+      "id": "4f392958-79a9-445c-9cee-451e872cc510",
+      "name": "Build Insert SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const q = (s) => (s || '').toString().replace(/'/g, \"''\");\nconst mk = (m) => {\n  if (!m.embedding || !m.embedding.values) throw new Error('embed ล้มเหลว');\n  const meta = { source_id: (m.metadata||{}).source_id ?? null, group_id: (m.metadata||{}).group_id,\n    group_name: (m.metadata||{}).group_name || '', title: (m.metadata||{}).title || '',\n    image_url: (m.metadata||{}).image_url || null, source_type: (m.metadata||{}).source_type || '',\n    chunk_no: (m.metadata||{}).chunk_no ?? 0 };\n  const vec = '[' + m.embedding.values.join(',') + ']';\n  const sql = `INSERT INTO rag_chunks (source_id, group_id, chunk_no, content, embedding, metadata) VALUES (${meta.source_id ?? 'NULL'}, ${meta.group_id}, ${meta.chunk_no}, '${q(m.text)}', '${vec}'::vector, '${q(JSON.stringify(meta))}'::jsonb)`;\n  return { json: { sql: sql } };\n};\nreturn $input.all().map(r => mk(r.json));"
+      }
+    },
+    {
+      "id": "b14680b4-37e3-4dc4-a8f2-77b7235a886f",
+      "name": "Insert Chunk",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        3060,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "867d69e1-3ad0-4637-a50c-7f8d22b56204",
+      "name": "Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{ json: { ok: true, message: 'นำเข้า + Embedding สำเร็จ', chunks: $('Build Insert SQL').all().length } }];"
+      }
+    },
+    {
+      "id": "6a5cad56-22f7-4af8-83e5-4429c3c8ae56",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        3060,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Ingest": {
+      "main": [
+        [
+          {
+            "node": "Route + Flags",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Is URL?": {
+      "main": [
+        [
+          {
+            "node": "Fetch URL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IF Has File?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch URL": {
+      "main": [
+        [
+          {
+            "node": "Strip Tags",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Strip Tags": {
+      "main": [
+        [
+          {
+            "node": "Build Source SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Has File?": {
+      "main": [
+        [
+          {
+            "node": "Build Gemini OCR",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IF Has Image URL?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Has Image URL?": {
+      "main": [
+        [
+          {
+            "node": "Download Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Source SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Image": {
+      "main": [
+        [
+          {
+            "node": "Reattach Flags",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reattach Flags": {
+      "main": [
+        [
+          {
+            "node": "Build Gemini OCR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Gemini OCR": {
+      "main": [
+        [
+          {
+            "node": "Get OCR Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get OCR Engine": {
+      "main": [
+        [
+          {
+            "node": "IF Local OCR?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Local OCR?": {
+      "main": [
+        [
+          {
+            "node": "EasyOCR Local",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Gemini Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Gemini Key": {
+      "main": [
+        [
+          {
+            "node": "Gemini OCR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "EasyOCR Local": {
+      "main": [
+        [
+          {
+            "node": "Shape Local OCR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Local OCR": {
+      "main": [
+        [
+          {
+            "node": "Build Source SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini OCR": {
+      "main": [
+        [
+          {
+            "node": "Set OCR Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set OCR Text": {
+      "main": [
+        [
+          {
+            "node": "Build Source SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Source SQL": {
+      "main": [
+        [
+          {
+            "node": "Save Source Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Source Row": {
+      "main": [
+        [
+          {
+            "node": "Chunk + Attach Meta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chunk + Attach Meta": {
+      "main": [
+        [
+          {
+            "node": "Embed Chunk (Gemini 768)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embed Chunk (Gemini 768)": {
+      "main": [
+        [
+          {
+            "node": "Join Emb+Chunk",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Join Emb+Chunk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Join Emb+Chunk": {
+      "main": [
+        [
+          {
+            "node": "Build Insert SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Insert SQL": {
+      "main": [
+        [
+          {
+            "node": "Insert Chunk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Chunk": {
+      "main": [
+        [
+          {
+            "node": "Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Result": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route + Flags": {
+      "main": [
+        [
+          {
+            "node": "IF Is URL?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

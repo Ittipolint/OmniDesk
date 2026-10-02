@@ -1,0 +1,31 @@
+# --- binaries / presentations (not source) ---
+*.pptx
+*.pdf
+
+# --- heavy local runtime (models, data) ---
+whisper-server/
+local/odoo/data/
+**/__pycache__/
+*.pyc
+
+# --- secrets (use .example templates instead) ---
+local/odoo/config/odoo.conf
+.env
+*.log
+
+# --- local debug dumps (may contain PII/tokens) ---
+execs-latest.json
+rest-wf-now.json
+line_backup.json
+decode-exec.js
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# --- backup files ---
+*.orig
+*.bak
+*~

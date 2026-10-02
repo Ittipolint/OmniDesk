@@ -1,0 +1,215 @@
+{
+  "_export": {
+    "workflowId": "ZOBfo6dERiUjsi1C",
+    "active": true,
+    "exportedAt": "2026-10-02T20:53:38Z",
+    "note": "Secrets replaced with __PLACEHOLDERS__. See README."
+  },
+  "name": "[LOCAL] ChatDesk Manager - Push",
+  "nodes": [
+    {
+      "position": [
+        176,
+        16
+      ],
+      "name": "Webhook",
+      "id": "16120dfe-1065-49f1-b3d3-3c4f028c1e1f",
+      "webhookId": "848b901b-bcff-489b-9e71-d98400b021ff",
+      "type": "n8n-nodes-base.webhook",
+      "parameters": {
+        "path": "chatdesk-push",
+        "responseMode": "responseNode",
+        "options": {},
+        "httpMethod": "POST"
+      },
+      "typeVersion": 2
+    },
+    {
+      "position": [
+        416,
+        16
+      ],
+      "name": "Create LINE Message",
+      "id": "aaaa1111-2222-3333-4444-555555555501",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "jsCode": "const body = $('Webhook').first().json.body || {};\nconst userId = body.userId || '';\nconst type = body.type || 'text';\nconst messages = [];\nif (type === 'image') {\n  const url = body.mediaUrl || '';\n  if (!url) { throw new Error('Missing mediaUrl for image'); }\n  messages.push({ type: 'image', originalContentUrl: url, previewImageUrl: body.mediaPreviewUrl || url });\n} else if (type === 'video') {\n  const url = body.mediaUrl || '';\n  if (!url) { throw new Error('Missing mediaUrl for video'); }\n  messages.push({ type: 'video', originalContentUrl: url, previewImageUrl: body.mediaPreviewUrl || url });\n} else if (type === 'sticker') {\n  const pkg = String(body.stickerPackage || '');\n  const sid = String(body.stickerId || '');\n  if (!pkg || !sid) { throw new Error('Missing sticker package/id'); }\n  messages.push({ type: 'sticker', packageId: pkg, stickerId: sid });\n} else {\n  messages.push({ type: 'text', text: String(body.text || '') });\n}\nif (!userId) { throw new Error('Missing userId'); }\nreturn [{ json: { to: userId, messages: messages, lineToken: (body.lineToken || '').toString() } }];"
+      },
+      "typeVersion": 2
+    },
+    {
+      "position": [
+        656,
+        16
+      ],
+      "name": "Send LINE Push API",
+      "id": "cccc1111-2222-3333-4444-555555555502",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "0mEqhx99gPe7KUV2",
+          "name": "ChatDesk LINE Push Header"
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "specifyBody": "json",
+        "method": "POST",
+        "authentication": "genericCredentialType",
+        "jsonBody": "={{ $json }}",
+        "url": "https://api.line.me/v2/bot/message/push",
+        "options": {},
+        "sendBody": true,
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "position": [
+        896,
+        16
+      ],
+      "name": "Reply ChatDesk",
+      "id": "dddd1111-2222-3333-4444-555555555503",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "parameters": {
+        "responseBody": "={\"ok\":true,\"sent\":true}",
+        "respondWith": "json",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "typeVersion": 1.1
+    },
+    {
+      "id": "ac996fb6-a0b8-4d56-958a-0798fcf9764b",
+      "name": "IF Has Token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        600,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "91437bd4-804e-4827-aa72-6d38b9510dfe",
+              "leftValue": "=((($json.lineToken || '') !== ''))",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "37b1529c-5617-4f77-a299-c7af1f207290",
+      "name": "Send Channel Push",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.line.me/v2/bot/message/push",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.lineToken}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"to\": {{ $json.to.toJsonString() }}, \"messages\": {{ $json.messages.toJsonString() }}}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Create LINE Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send LINE Push API": {
+      "main": [
+        [
+          {
+            "node": "Reply ChatDesk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create LINE Message": {
+      "main": [
+        [
+          {
+            "node": "IF Has Token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Has Token?": {
+      "main": [
+        [
+          {
+            "node": "Send Channel Push",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send LINE Push API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Channel Push": {
+      "main": [
+        [
+          {
+            "node": "Reply ChatDesk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "pinData": {}
+}

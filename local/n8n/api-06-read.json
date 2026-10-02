@@ -1,0 +1,661 @@
+{
+  "_export": {
+    "workflowId": "ynBDglW8hWrzEp81",
+    "active": true,
+    "exportedAt": "2026-10-02T20:53:37Z",
+    "note": "Secrets replaced with __PLACEHOLDERS__. See README."
+  },
+  "name": "ChatDesk API-06 Read (inbox/thread/webthread)",
+  "nodes": [
+    {
+      "id": "8112342d-2404-4825-8a10-3fc6e652bd90",
+      "name": "Webhook Read",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api-read",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "4252c4aa-8dd9-4f08-83d1-7d9f56e52d80"
+    },
+    {
+      "id": "66f8df1e-ee57-4de1-9e54-afe0eecdee65",
+      "name": "Prep",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const b = $input.first().json.body || $input.first().json || {};\nconst resource = (b.resource || '').toString();\nif (!['inbox', 'thread', 'webthread'].includes(resource)) throw new Error('unknown resource');\nreturn [{ json: { resource: resource, filter: (b.filter || 'all').toString(),\n  q: (b.q || '').toString(), id: parseInt(b.id) || 0,\n  since: Math.max(0, parseInt(b.since) || 0), userId: (b.userId || b.externalUserId || '').toString(),\n  channel: (b.channel || '').toString() } }];"
+      }
+    },
+    {
+      "id": "41479edb-44a7-4f19-b16d-1b33290a0854",
+      "name": "IF Inbox?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        640,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "446a836b-9204-4352-a423-086ebeda84ca",
+              "leftValue": "={{ $json.resource === 'inbox' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "ac23ed39-b829-4273-bee9-8700c8ca3434",
+      "name": "IF Thread?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        640,
+        480
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "4e64629a-71cc-4366-812d-42117cb4c13b",
+              "leftValue": "={{ $json.resource === 'thread' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d5707b1d-832a-4077-bb9f-1e9cfcdae487",
+      "name": "Q Inbox",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const p = $input.first().json;\nconst q = (s) => (s || '').toString().replace(/'/g, \"''\");\nlet where = \"c.status = 'open'\";\nif (p.filter === 'unread') where = \"c.unread_count > 0 AND c.status = 'open'\";\nelse if (p.filter === 'human') where = \"c.bot_enabled = 0 AND c.status = 'open'\";\nelse if (p.filter === 'closed') where = \"c.status = 'closed'\";\nif (p.q) { const like = '%' + q(p.q) + '%'; where += ` AND (c.display_name LIKE '${like}' OR c.external_user_id LIKE '${like}' OR EXISTS (SELECT 1 FROM cd_messages m WHERE m.conversation_id = c.id AND m.content LIKE '${like}'))`; }\nconst items = `SELECT COALESCE(json_agg(row_to_json(t)), '[]') FROM (SELECT c.id, c.channel, c.external_user_id, c.display_name, c.picture_url, c.status, c.bot_enabled, c.unread_count, c.last_message_at, c.last_message_text, COALESCE(m.label, '') AS channel_label FROM cd_conversations c LEFT JOIN channel_map m ON m.channel_code = c.channel WHERE ${where} ORDER BY c.last_message_at IS NULL, c.last_message_at DESC, c.id DESC LIMIT 100) t`;\nreturn [{ json: { sql: `SELECT (${items}) AS items, (SELECT COUNT(*) FROM cd_conversations WHERE status = 'open') AS open_count, (SELECT COUNT(*) FROM cd_conversations WHERE unread_count > 0 AND status = 'open') AS unread_count, (SELECT COUNT(*) FROM cd_conversations WHERE bot_enabled = 0 AND status = 'open') AS human_count, (SELECT COUNT(*) FROM cd_conversations WHERE status = 'closed') AS closed_count` } }];"
+      }
+    },
+    {
+      "id": "ab3f04ea-9c9d-4f84-9c80-72d5391e28eb",
+      "name": "Run Inbox",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1060,
+        200
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "9d8022ee-8780-4f21-9f4a-0a3ee18d4dea",
+      "name": "Shape Inbox",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const r = $input.first().json;\nlet items = r.items || [];\nif (typeof items === 'string') { try { items = JSON.parse(items); } catch(e) { items = []; } }\nconst esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst linkify = (s) => esc(s).replace(/(https?:\\/\\/[^\\s<]+)/g, '<a href=\"$1\" target=\"_blank\" rel=\"noopener noreferrer\">$1</a>').replace(/\\n/g, '<br>');\nconst tz = (ts) => { if (!ts) return null; const d = new Date(new Date(ts).getTime() + 7*3600*1000); const p = (n) => String(n).padStart(2, '0');\n  return { hm: `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`, dmy: `${p(d.getUTCDate())}/${p(d.getUTCMonth()+1)}/${d.getUTCFullYear()}` }; };\nconst fmt = (row) => { const t = tz(row.created_at); return { id: row.id, sender: row.sender, type: row.message_type,\n  content: row.content, html: linkify(row.content || ''),\n  mediaUrl: row.media_url || null, mediaPreviewUrl: row.media_preview_url || null,\n  stickerPackage: row.sticker_package || null, stickerId: row.sticker_id || null,\n  status: row.status || 'ok', error: row.error_message || null,\n  delivered: !!row.delivered_at, read: !!row.read_at, deleted: false,\n  deliveredAt: row.delivered_at ? tz(row.delivered_at).hm : null,\n  readAt: row.read_at ? tz(row.read_at).hm : null,\n  time: t ? t.hm : '', date: t ? t.dmy : '' }; };\nconst cname = (c) => (c.display_name !== null && c.display_name !== '') ? c.display_name : ('id#' + c.id);\nconst srcname = (x) => { const l = (x.channel_label || '').toString().trim(); return l !== '' ? l : ((x.channel || '').toString()); };\nconst list = items.map(x => ({ id: x.id, name: cname(x), source: srcname(x),\n  picture: x.picture_url, userId: x.external_user_id, status: x.status,\n  botEnabled: parseInt(x.bot_enabled) === 1, unread: parseInt(x.unread_count) || 0,\n  preview: x.last_message_text || '',\n  time: x.last_message_at ? (() => { const t = tz(x.last_message_at); return t.dmy.slice(0, 5) + ' ' + t.hm; })() : '' }));\nreturn [{ json: { ok: true, items: list, counts: { open: parseInt(r.open_count) || 0,\n  unread: parseInt(r.unread_count) || 0, human: parseInt(r.human_count) || 0, closed: parseInt(r.closed_count) || 0 } } }];"
+      }
+    },
+    {
+      "id": "6a32e399-dc1b-4bed-a16f-373b25bd1589",
+      "name": "Q TConv",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        480
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const p = $input.first().json;\nif (!p.id) throw new Error('missing id');\nreturn [{ json: { id: p.id, since: p.since, sql: `SELECT * FROM cd_conversations WHERE id = ${p.id} LIMIT 1` } }];"
+      }
+    },
+    {
+      "id": "99f024ce-0f94-4ad4-8888-10e3ed061279",
+      "name": "Run TConv",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1060,
+        480
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "f81de7c4-7361-4fd0-bc05-d99de7b6657d",
+      "name": "Q TMsgs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        600
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const t = $('Q TConv').first().json;\nconst id = parseInt(t.id) || 0;\nif (!id) throw new Error('missing id');\nconst since = Math.max(0, parseInt(t.since) || 0);\nreturn [{ json: { id: id, since: since, sql: `SELECT id, sender, content, message_type, media_url, media_preview_url, sticker_package, sticker_id, status, error_message, delivered_at, read_at, created_at FROM cd_messages WHERE conversation_id = ${id} AND deleted_at IS NULL` + (since > 0 ? ` AND id > ${since}` : '') + ` ORDER BY id DESC LIMIT 200` } }];"
+      }
+    },
+    {
+      "id": "54d2e5e0-1338-4840-8579-3bf165c8b39a",
+      "name": "Run TMsgs",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1060,
+        600
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "ce734b7d-20e5-4060-a88b-76fd8b1f44fd",
+      "name": "Q TClear",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        600
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const p = $('Q TMsgs').first().json;\nreturn [{ json: { sql: `UPDATE cd_conversations SET unread_count = 0 WHERE id = ${p.id} AND unread_count > 0` } }];"
+      }
+    },
+    {
+      "id": "cff898b4-da5e-439f-bb32-cd6561126534",
+      "name": "Run TClear",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1460,
+        600
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "4401ea8d-7afd-4802-93c2-a55215139eba",
+      "name": "Q TRead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1660,
+        600
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const p = $('Q TMsgs').first().json;\nreturn [{ json: { sql: `UPDATE cd_messages SET read_at = COALESCE(read_at, NOW()) WHERE conversation_id = ${p.id} AND sender = 'customer' AND read_at IS NULL` } }];"
+      }
+    },
+    {
+      "id": "b42373af-7e29-4686-bffa-af1b1686d16b",
+      "name": "Run TRead",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1860,
+        600
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "ff93279d-2904-4e86-addd-50c39bbfcfac",
+      "name": "Shape Thread",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1460,
+        480
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "let conv = null;\ntry { conv = $('Run TConv').first().json; if (conv.channel === undefined) conv = null; } catch(e) { conv = null; }\nif (!conv) return [{ json: { ok: false, error: 'conv-missing' } }];\nconst esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst linkify = (s) => esc(s).replace(/(https?:\\/\\/[^\\s<]+)/g, '<a href=\"$1\" target=\"_blank\" rel=\"noopener noreferrer\">$1</a>').replace(/\\n/g, '<br>');\nconst tz = (ts) => { if (!ts) return null; const d = new Date(new Date(ts).getTime() + 7*3600*1000); const p = (n) => String(n).padStart(2, '0');\n  return { hm: `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`, dmy: `${p(d.getUTCDate())}/${p(d.getUTCMonth()+1)}/${d.getUTCFullYear()}` }; };\nconst fmt = (row) => { const t = tz(row.created_at); return { id: row.id, sender: row.sender, type: row.message_type,\n  content: row.content, html: linkify(row.content || ''),\n  mediaUrl: row.media_url || null, mediaPreviewUrl: row.media_preview_url || null,\n  stickerPackage: row.sticker_package || null, stickerId: row.sticker_id || null,\n  status: row.status || 'ok', error: row.error_message || null,\n  delivered: !!row.delivered_at, read: !!row.read_at, deleted: false,\n  deliveredAt: row.delivered_at ? tz(row.delivered_at).hm : null,\n  readAt: row.read_at ? tz(row.read_at).hm : null,\n  time: t ? t.hm : '', date: t ? t.dmy : '' }; };\nconst cname = (c) => (c.display_name !== null && c.display_name !== '') ? c.display_name : ('id#' + c.id);\nconst msgs = $('Run TMsgs').all().map(r => r.json).filter(r => r.sender !== undefined).sort((a, b) => a.id - b.id);\nconst since = (() => { try { return $('Q TMsgs').first().json.since || 0; } catch(e) { return 0; } })();\nconst lastId = msgs.reduce((m, x) => Math.max(m, x.id), since);\nconst ct = tz(conv.created_at);\nreturn [{ json: { ok: true,\n  conversation: { id: conv.id, name: cname(conv), picture: conv.picture_url, userId: conv.external_user_id,\n    channel: conv.channel, status: conv.status, botEnabled: parseInt(conv.bot_enabled) === 1,\n    since: ct ? (ct.dmy + ' ' + ct.hm) : '' },\n  messages: msgs.map(fmt), lastId: lastId } }];"
+      }
+    },
+    {
+      "id": "b51b7053-9cb9-4ffe-bca5-cfdff2494bca",
+      "name": "Q WConv",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        660
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const p = $input.first().json;\nif (!/^WEB_[A-Za-z0-9_-]{1,64}$/.test(p.userId)) throw new Error('bad user');\nconst q = (s) => (s || '').toString().replace(/'/g, \"''\");\nconst ch = (p.channel === 'shopweb') ? 'shopweb' : 'web';\nreturn [{ json: { userId: p.userId, since: p.since, channel: ch, sql: `SELECT * FROM cd_conversations WHERE channel = '${ch}' AND external_user_id = '${q(p.userId)}' LIMIT 1` } }];"
+      }
+    },
+    {
+      "id": "1cdc996f-143e-472a-8744-02f437d104bf",
+      "name": "Run WConv",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1060,
+        660
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "cd808fb6-84bb-4ab4-bc06-9e57e5c82037",
+      "name": "Q WMsgs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        780
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const t = $('Q WConv').first().json;\nconst q = (s) => (s || '').toString().replace(/'/g, \"''\");\nconst since = Math.max(0, parseInt(t.since) || 0);\nconst ch = (t.channel === 'shopweb') ? 'shopweb' : 'web';\nreturn [{ json: { since: since, sql: `SELECT id, sender, content, message_type, created_at FROM cd_messages WHERE conversation_id = COALESCE((SELECT id FROM cd_conversations WHERE channel = '${ch}' AND external_user_id = '${q(t.userId)}' LIMIT 1), -1) AND deleted_at IS NULL` + (since > 0 ? ` AND id > ${since}` : '') + ` ORDER BY id DESC LIMIT 100` } }];"
+      }
+    },
+    {
+      "id": "68fa3627-ee5a-4809-9446-4dbd85153d24",
+      "name": "Run WMsgs",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1060,
+        780
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "e4eca892-fb2e-4088-9a98-4abcae559b09",
+      "name": "Shape Web",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1460,
+        720
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "let conv = null;\ntry { conv = $('Run WConv').first().json; if (conv.channel === undefined) conv = null; } catch(e) { conv = null; }\nconst since = (() => { try { return $('Q WConv').first().json.since || 0; } catch(e) { return 0; } })();\nif (!conv) return [{ json: { ok: true, conversationId: 0, messages: [], lastId: since } }];\nconst esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst linkify = (s) => esc(s).replace(/(https?:\\/\\/[^\\s<]+)/g, '<a href=\"$1\" target=\"_blank\" rel=\"noopener noreferrer\">$1</a>').replace(/\\n/g, '<br>');\nconst tz = (ts) => { if (!ts) return null; const d = new Date(new Date(ts).getTime() + 7*3600*1000); const p = (n) => String(n).padStart(2, '0');\n  return { hm: `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`, dmy: `${p(d.getUTCDate())}/${p(d.getUTCMonth()+1)}/${d.getUTCFullYear()}` }; };\nconst fmt = (row) => { const t = tz(row.created_at); return { id: row.id, sender: row.sender, type: row.message_type,\n  content: row.content, html: linkify(row.content || ''),\n  mediaUrl: row.media_url || null, mediaPreviewUrl: row.media_preview_url || null,\n  stickerPackage: row.sticker_package || null, stickerId: row.sticker_id || null,\n  status: row.status || 'ok', error: row.error_message || null,\n  delivered: !!row.delivered_at, read: !!row.read_at, deleted: false,\n  deliveredAt: row.delivered_at ? tz(row.delivered_at).hm : null,\n  readAt: row.read_at ? tz(row.read_at).hm : null,\n  time: t ? t.hm : '', date: t ? t.dmy : '' }; };\nconst cname = (c) => (c.display_name !== null && c.display_name !== '') ? c.display_name : ('id#' + c.id);\nconst msgs = $('Run WMsgs').all().map(r => r.json).filter(r => r.sender !== undefined).sort((a, b) => a.id - b.id);\nconst lastId = msgs.reduce((m, x) => Math.max(m, x.id), since);\nreturn [{ json: { ok: true, conversationId: conv.id, botEnabled: parseInt(conv.bot_enabled) === 1,\n  status: conv.status, messages: msgs.map(m => { const f = fmt(m); return { id: f.id, sender: f.sender, type: f.type, text: f.content, time: f.time }; }), lastId: lastId } }];"
+      }
+    },
+    {
+      "id": "2a8b2de0-78ba-4d37-8586-4ea0ebd4d2a2",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1700,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Read": {
+      "main": [
+        [
+          {
+            "node": "Prep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep": {
+      "main": [
+        [
+          {
+            "node": "IF Inbox?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Inbox?": {
+      "main": [
+        [
+          {
+            "node": "Q Inbox",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IF Thread?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Q Inbox": {
+      "main": [
+        [
+          {
+            "node": "Run Inbox",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Inbox": {
+      "main": [
+        [
+          {
+            "node": "Shape Inbox",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Inbox": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Thread?": {
+      "main": [
+        [
+          {
+            "node": "Q TConv",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Q WConv",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Q TConv": {
+      "main": [
+        [
+          {
+            "node": "Run TConv",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run TConv": {
+      "main": [
+        [
+          {
+            "node": "Q TMsgs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Q TMsgs": {
+      "main": [
+        [
+          {
+            "node": "Run TMsgs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run TMsgs": {
+      "main": [
+        [
+          {
+            "node": "Q TClear",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Q TClear": {
+      "main": [
+        [
+          {
+            "node": "Run TClear",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run TClear": {
+      "main": [
+        [
+          {
+            "node": "Q TRead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Q TRead": {
+      "main": [
+        [
+          {
+            "node": "Run TRead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run TRead": {
+      "main": [
+        [
+          {
+            "node": "Shape Thread",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Thread": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Q WConv": {
+      "main": [
+        [
+          {
+            "node": "Run WConv",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run WConv": {
+      "main": [
+        [
+          {
+            "node": "Q WMsgs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Q WMsgs": {
+      "main": [
+        [
+          {
+            "node": "Run WMsgs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run WMsgs": {
+      "main": [
+        [
+          {
+            "node": "Shape Web",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Web": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

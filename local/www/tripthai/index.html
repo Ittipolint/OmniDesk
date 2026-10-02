@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TripThai — จองที่พัก โรงแรมทั่วไทย ราคาดีที่สุด</title>
+<meta name="description" content="เว็บจองที่พักสไตล์ Trip.com ค้นหา เปรียบเทียบ และจองโรงแรมทั่วไทย พร้อม AI ผู้ช่วยตลอด 24 ชม.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css?v=20260922x">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✈️</text></svg>">
+</head>
+<body>
+
+<!-- แถบรายงานเมื่อระบบแชทบูตไม่ขึ้น (inline script แยกจาก app.js จะได้ทำงานได้แม้ app.js พัง) -->
+<div id="bootErr" class="boot-err hidden"></div>
+<script>
+(function(){
+  function show(msg){
+    try{
+      var b = document.getElementById("bootErr");
+      if(b){ b.className = "boot-err"; b.textContent = msg; }
+    }catch(_){}
+  }
+  window.__bootErrors = [];
+  window.addEventListener("error", function(e){
+    try{
+      var m = (e && e.message) ? e.message : "load error";
+      if(e && e.filename && e.filename.indexOf("app.js") >= 0) m += " @app.js";
+      window.__bootErrors.push(String(m).slice(0, 160));
+      show("⚠️ ระบบแชทขัดข้อง: " + window.__bootErrors.join(" | ") + " — แคปข้อความนี้ส่งกลับมา");
+    }catch(_){}
+  }, true);
+  window.__appJsFailed = function(){
+    show("⚠️ โหลดไฟล์ระบบแชท (app.js) ไม่สำเร็จ — อาจโดนเน็ต/WAF/ad-block บล็อก หรือแคชค้าง ลอง Ctrl+F5 / ปิด ad-block / เปลี่ยน browser แล้วแจ้งผลกลับมา");
+  };
+  window.__bootCheck = function(){
+    try{
+      var fns = ["toggleChat", "sendChat", "toggleMic", "toggleSpeak", "voiceTest"];
+      var missing = [];
+      for(var i = 0; i < fns.length; i++){ if(typeof window[fns[i]] !== "function") missing.push(fns[i]); }
+      var grid = document.getElementById("hotelGrid");
+      var hasCards = !!(grid && grid.children.length > 0);
+      if(missing.length || !hasCards){
+        show("⚠️ ระบบแชทเริ่มไม่สมบูรณ์" + (missing.length ? " (ฟังก์ชันหาย: " + missing.join(",") + ")" : "") + (hasCards ? "" : " (ไม่มีรายการที่พัก)") + " — ลอง Ctrl+F5 แล้วแจ้งข้อความนี้กลับมา");
+      }
+    }catch(_){}
+  };
+})();
+</script>
+
+<!-- ===== TOP BAR ===== -->
+<div class="topbar">
+  <span>🎉 โปร 9.9 ลดสูงสุด 40% + โค้ด <b>TRIPTHAI100</b> ลดเพิ่ม 100 บาท</span>
+</div>
+
+<!-- ===== HEADER (Trip.com style) ===== -->
+<header class="header">
+  <div class="container header-inner">
+    <a class="logo" href="#" onclick="goHome(event)">
+      <span class="logo-icon">✈️</span>
+      <span class="logo-text">Trip<b>Thai</b><small>.com style</small></span>
+    </a>
+    <nav class="main-nav">
+      <a href="#hotels" class="active">🏨 โรงแรม</a>
+      <a href="#flights" onclick="soon(event)">✈️ เที่ยวบิน</a>
+      <a href="#trains" onclick="soon(event)">🚄 รถไฟ</a>
+      <a href="#tours" onclick="soon(event)">🎡 ทัวร์ & ตั๋ว</a>
+      <a href="#promo">🔥 โปรโมชั่น</a>
+    </nav>
+    <div class="header-actions">
+      <button class="pill">THB ▾</button>
+      <button class="pill" onclick="openBookings()">🧾 การจองของฉัน <span id="bookingCount" class="count-badge">0</span></button>
+      <button class="btn-login" onclick="soon(event)">เข้าสู่ระบบ</button>
+    </div>
+    <button class="hamburger" onclick="document.querySelector('.main-nav').classList.toggle('open')">☰</button>
+  </div>
+</header>
+
+<!-- ===== HERO + SEARCH ===== -->
+<section class="hero">
+  <div class="container">
+    <h1>จองที่พักทั่วไทย ง่าย ครบ จบในที่เดียว</h1>
+    <p>โรงแรม รีสอร์ท วิลล่า โฮสเทล กว่า 12,000 แห่ง • ยืนยันการจองทันที • ยกเลิกฟรีหลายรายการ</p>
+    <div class="search-card">
+      <div class="search-row">
+        <div class="field grow">
+          <label>📍 จุดหมายปลายทาง</label>
+          <input id="qDest" list="destList" placeholder="เช่น กรุงเทพฯ, เชียงใหม่, ภูเก็ต, พัทยา…">
+          <datalist id="destList">
+            <option value="กรุงเทพฯ"></option><option value="เชียงใหม่"></option>
+            <option value="ภูเก็ต"></option><option value="พัทยา"></option>
+            <option value="กระบี่"></option><option value="หัวหิน"></option>
+            <option value="เกาะสมุย"></option><option value="เชียงราย"></option>
+          </datalist>
+        </div>
+        <div class="field">
+          <label>📅 เช็กอิน</label>
+          <input type="date" id="qCheckin">
+        </div>
+        <div class="field">
+          <label>📅 เช็กเอาต์</label>
+          <input type="date" id="qCheckout">
+        </div>
+        <div class="field">
+          <label>👥 ผู้เข้าพัก / ห้อง</label>
+          <select id="qGuests">
+            <option>2 ท่าน / 1 ห้อง</option><option>1 ท่าน / 1 ห้อง</option>
+            <option>3 ท่าน / 1 ห้อง</option><option>4 ท่าน / 2 ห้อง</option>
+            <option>5+ ท่าน / 2 ห้อง</option>
+          </select>
+        </div>
+        <button class="btn-search" onclick="doSearch()">🔍 ค้นหา</button>
+      </div>
+      <div class="quick-tags">
+        ยอดนิยม:
+        <button onclick="quickSearch('ภูเก็ต')">ภูเก็ต</button>
+        <button onclick="quickSearch('เชียงใหม่')">เชียงใหม่</button>
+        <button onclick="quickSearch('พัทยา')">พัทยา</button>
+        <button onclick="quickSearch('กรุงเทพฯ')">กรุงเทพฯ</button>
+        <button onclick="quickSearch('กระบี่')">กระบี่</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== PROMO STRIP ===== -->
+<section id="promo" class="container promo-strip">
+  <div class="promo-card blue"><b>สมาชิกใหม่</b><span>ลดเพิ่ม 15% ครั้งแรก</span></div>
+  <div class="promo-card orange"><b>ยกเลิกฟรี</b><span>โรงแรมร่วมรายการกว่า 8,000 แห่ง</span></div>
+  <div class="promo-card green"><b>สะสมพอยต์</b><span>ทุกการจองรับ coins คืน 5%</span></div>
+  <div class="promo-card purple"><b>ผ่อน 0%</b><span>บัตรเครดิตที่ร่วมรายการ</span></div>
+</section>
+
+<main class="container layout">
+  <!-- ===== FILTERS ===== -->
+  <aside class="filters">
+    <h3>🎯 ตัวกรอง <button class="link" onclick="resetFilters()">ล้างทั้งหมด</button></h3>
+    <div class="f-group">
+      <b>ช่วงราคา / คืน</b>
+      <label><input type="checkbox" class="f-price" value="0-1000" checked> ต่ำกว่า ฿1,000</label>
+      <label><input type="checkbox" class="f-price" value="1000-2500" checked> ฿1,000 – ฿2,500</label>
+      <label><input type="checkbox" class="f-price" value="2500-5000" checked> ฿2,500 – ฿5,000</label>
+      <label><input type="checkbox" class="f-price" value="5000-99999" checked> ฿5,000 ขึ้นไป</label>
+    </div>
+    <div class="f-group">
+      <b>คะแนนรีวิว</b>
+      <label><input type="checkbox" class="f-rate" value="9" checked> 9+ ยอดเยี่ยม</label>
+      <label><input type="checkbox" class="f-rate" value="8" checked> 8+ ดีมาก</label>
+      <label><input type="checkbox" class="f-rate" value="7" checked> 7+ ดี</label>
+      <label><input type="checkbox" class="f-rate" value="0" checked> ทุกระดับ</label>
+    </div>
+    <div class="f-group">
+      <b>ดาวที่พัก</b>
+      <label><input type="checkbox" class="f-star" value="5" checked> ⭐ 5 ดาว</label>
+      <label><input type="checkbox" class="f-star" value="4" checked> ⭐ 4 ดาว</label>
+      <label><input type="checkbox" class="f-rate" value="3" data-star="3" checked> ⭐ 3 ดาวลงมา</label>
+    </div>
+    <div class="f-group">
+      <b>เรียงตาม</b>
+      <select id="sortBy" onchange="renderHotels()">
+        <option value="pop">แนะนำ</option>
+        <option value="low">ราคา: ต่ำ → สูง</option>
+        <option value="high">ราคา: สูง → ต่ำ</option>
+        <option value="rate">คะแนนสูงสุด</option>
+      </select>
+    </div>
+    <div class="help-box">
+      💡 <b>ต้องการความช่วยเหลือ?</b><br>กดปุ่ม AI มุมขวาล่าง<br>คุยกับเจ้าหน้าที่ผ่าน <b>ChatDesk</b> ได้ 24 ชม.
+      <button class="btn-chat-open" onclick="openChat()">💬 เปิดแชทเลย</button>
+    </div>
+  </aside>
+
+  <!-- ===== LISTING ===== -->
+  <section id="hotels" class="listing">
+    <div class="list-head">
+      <h2 id="listTitle">🏨 ที่พักแนะนำ <small id="listCount"></small></h2>
+      <span id="searchMeta" class="meta"></span>
+    </div>
+    <div id="hotelGrid" class="hotel-grid"></div>
+  </section>
+</main>
+
+<!-- ===== DESTINATIONS ===== -->
+<section class="container">
+  <h2>🌏 จุดหมายยอดฮิต</h2>
+  <div class="dest-grid">
+    <div class="dest" onclick="quickSearch('กรุงเทพฯ')"><img src="https://picsum.photos/seed/bangkok1/500/320" alt="กรุงเทพ"><span>กรุงเทพฯ<br><small>2,340 ที่พัก</small></span></div>
+    <div class="dest" onclick="quickSearch('เชียงใหม่')"><img src="https://picsum.photos/seed/chiangmai1/500/320" alt="เชียงใหม่"><span>เชียงใหม่<br><small>1,120 ที่พัก</small></span></div>
+    <div class="dest" onclick="quickSearch('ภูเก็ต')"><img src="https://picsum.photos/seed/phuket1/500/320" alt="ภูเก็ต"><span>ภูเก็ต<br><small>1,860 ที่พัก</small></span></div>
+    <div class="dest" onclick="quickSearch('พัทยา')"><img src="https://picsum.photos/seed/pattaya1/500/320" alt="พัทยา"><span>พัทยา<br><small>980 ที่พัก</small></span></div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="container foot-grid">
+    <div><h4>TripThai</h4><p>เว็บเดโมเพื่อการศึกษา ลอกแบบ UX จาก Trip.com<br>© 2026 TripThai • SBU Week7<br><small>ราคา/คะแนนเป็นข้อมูลอ้างอิงโดยประมาณ ตรวจสอบอีกครั้งตอนจอง • รูปสถานที่จาก Wikimedia Commons</small></p></div>
+    <div><h4>ช่วยเหลือ</h4><a href="#" onclick="openChat();return false;">แชทกับเรา</a><a href="#" onclick="soon(event)">ศูนย์ช่วยเหลือ</a><a href="#" onclick="soon(event)">นโยบายยกเลิก</a></div>
+    <div><h4>ติดต่อเรา</h4><p>ทักแชทมุมขวาล่างได้ตลอด 24 ชม.</p><button class="btn-chat-open" onclick="openChat()">💬 เปิดแชทเลย</button></div>
+  </div>
+</footer>
+
+<!-- ===== HOTEL MODAL ===== -->
+<div id="hotelModal" class="modal hidden">
+  <div class="modal-box">
+    <button class="modal-x" onclick="closeModal('hotelModal')">✕</button>
+    <div id="hotelDetail"></div>
+  </div>
+</div>
+
+<!-- ===== BOOKING MODAL ===== -->
+<div id="bookModal" class="modal hidden">
+  <div class="modal-box">
+    <button class="modal-x" onclick="closeModal('bookModal')">✕</button>
+    <h2>📝 ยืนยันการจอง</h2>
+    <div id="bookSummary" class="book-summary"></div>
+    <div class="form-grid">
+      <div><label>ชื่อ-นามสกุล *</label><input id="bName" placeholder="เช่น สมชาย ใจดี"></div>
+      <div><label>เบอร์โทร *</label><input id="bPhone" placeholder="08x-xxx-xxxx"></div>
+      <div><label>อีเมล *</label><input id="bEmail" placeholder="you@email.com"></div>
+      <div><label>จำนวนห้อง</label><select id="bRooms"><option>1</option><option>2</option><option>3</option><option>4</option></select></div>
+      <div class="full"><label>คำขอพิเศษ</label><input id="bNote" placeholder="เช่น ขอห้องชั้นสูง เตียงคู่ ไม่สูบบุหรี่"></div>
+      <div class="full"><label>วิธีชำระเงิน</label>
+        <div class="pay-row">
+          <label><input type="radio" name="pay" checked> 💳 บัตรเครดิต</label>
+          <label><input type="radio" name="pay"> 🏦 โอนธนาคาร</label>
+          <label><input type="radio" name="pay"> 💰 จ่ายที่ที่พัก</label>
+        </div>
+      </div>
+      <div class="full"><label>โค้ดส่วนลด</label>
+        <div class="coupon-row"><input id="bCoupon" placeholder="ลอง TRIPTHAI100"><button onclick="applyCoupon()">ใช้โค้ด</button></div>
+        <small id="couponMsg"></small>
+      </div>
+    </div>
+    <div class="book-total">ยอดรวม: <b id="bookTotal">฿0</b> <small id="bookBreak"></small></div>
+    <button class="btn-book" onclick="confirmBooking()">✅ ยืนยันการจองเลย</button>
+  </div>
+</div>
+
+<!-- ===== MY BOOKINGS MODAL ===== -->
+<div id="myModal" class="modal hidden">
+  <div class="modal-box">
+    <button class="modal-x" onclick="closeModal('myModal')">✕</button>
+    <h2>🧾 การจองของฉัน</h2>
+    <div id="myList"></div>
+  </div>
+</div>
+
+<!-- ===== FLOATING AI BOT (มุมขวาล่าง) ===== -->
+<button id="aiFab" onclick="toggleChat()" aria-label="เปิดแชท AI">
+  <span class="fab-pulse"></span>
+  <span class="fab-icon">🤖</span>
+  <span class="fab-badge" id="fabBadge">1</span>
+  <span class="fab-tip">AI ช่วยจอง 24 ชม.</span>
+</button>
+
+<!-- ===== CHAT WINDOW ===== -->
+<div id="chatWin" class="chat-win hidden">
+  <div class="chat-head">
+    <div class="chat-agent"><span class="avatar">🤖</span>
+      <div><b>TripThai AI ผู้ช่วย</b><small id="chatStatus">● ออนไลน์ • ตอบทันที</small></div>
+    </div>
+    <div>
+      <button id="spkBtn" class="icon-btn" onclick="toggleSpeak()" title="เปิด/ปิดเสียงบอท">🔇</button>
+      <button class="icon-btn" onclick="toggleChat(true)" title="ปิด">✕</button>
+    </div>
+  </div>
+
+  <!-- แชท AI (ทุกข้อความส่งถึงเจ้าหน้าที่เบื้องหลังอัตโนมัติ) -->
+  <div id="paneAi">
+    <div id="chatBody" class="chat-body"></div>
+    <div class="quick-row">
+      <button onclick="quickAsk('หาที่พักภูเก็ต')">🏝️ ภูเก็ต</button>
+      <button onclick="quickAsk('ยกเลิกการจองทำอย่างไร')">❌ ยกเลิกจอง</button>
+      <button onclick="quickAsk('มีโปรโมชั่นอะไรบ้าง')">🎁 โปรโมชั่น</button>
+      <button onclick="askName()">📝 แจ้งชื่อ</button>
+      <button onclick="quickAsk('วิธีจองห้องทำอย่างไร')">🛎️ วิธีจอง</button>
+      <button onclick="voiceTest()">🔧 ทดสอบเสียง</button>
+    </div>
+    <div class="chat-input">
+      <button id="micBtn" class="mic-btn" onclick="toggleMic()" title="กดเพื่อพูด (ไม่เกิน 45 วินาที)" aria-label="พูดด้วยเสียง">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
+      </button>
+      <input id="chatText" placeholder="พิมพ์หรือกดปุ่มไมค์เพื่อพูด… เช่น หาโรงแรมเชียงใหม่" onkeydown="if(event.key==='Enter')sendChat()">
+      <button onclick="sendChat()">ส่ง ➤</button>
+    </div>
+  </div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="app.js?v=local-rag1" onerror="__appJsFailed()"></script>
+<script>setTimeout(function(){ try{ __bootCheck(); }catch(e){} }, 3000);</script>
+</body>
+</html>

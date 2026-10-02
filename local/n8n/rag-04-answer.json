@@ -1,0 +1,740 @@
+{
+  "_export": {
+    "workflowId": "RKrBD4TtzMNsRtEk",
+    "active": true,
+    "exportedAt": "2026-10-02T20:53:38Z",
+    "note": "Secrets replaced with __PLACEHOLDERS__. See README."
+  },
+  "name": "ChatDesk RAG-04 Answer (Gemini + PGVector + Postgres)",
+  "nodes": [
+    {
+      "id": "352b6901-c4b7-42ee-ab35-ba891da09433",
+      "name": "Webhook Answer",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rag-answer",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "94db2927-7a4b-41cf-97cf-1808e7704365"
+    },
+    {
+      "id": "0aa86942-d96f-4221-90a2-cdec038f0281",
+      "name": "Prep",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const b = $input.first().json.body || $input.first().json || {};\nconst topk = Math.max(1, Math.min(10, parseInt(b.top_k) || 4));\nconst gids = (function(v){ if (v === undefined || v === null || v === '') return []; const a = Array.isArray(v) ? v : [v]; return a.map(function(x){ return parseInt(x); }).filter(function(x){ return x > 0; }); })(b.group_ids !== undefined ? b.group_ids : b.group_id);\nreturn [{ json: { question: (b.question || '').toString().slice(0, 2000),\n  group_id: gids.length ? gids[0] : null,\n  group_ids: gids,\n  session_id: (b.session_id || 'web-' + Date.now()).toString(), top_k: topk } }];"
+      }
+    },
+    {
+      "id": "cedc75df-ac24-47f2-98df-09b75e5de166",
+      "name": "Get Gemini Key",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        520,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE((SELECT value FROM app_settings WHERE key = 'gemini.api_key'), '__GEMINI_API_KEY__') AS value",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "2f7666a4-ae11-491b-b7c9-c4a9dd4f63b5",
+      "name": "Embed Query (Gemini 768)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        640,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=' + $('Get Gemini Key').first().json.value }}",
+        "options": {
+          "timeout": 60000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"content\": {\"parts\": [{\"text\": {{ $('Prep').first().json.question.toJsonString() }} }]}, \"taskType\": \"RETRIEVAL_QUERY\", \"outputDimensionality\": 768}"
+      }
+    },
+    {
+      "id": "99ec951d-a01c-4bff-91a1-6371098e7f01",
+      "name": "Attach Params",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        830,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const p = $('Prep').first().json;\nconst e = $input.first().json;\nif (!e.embedding || !e.embedding.values) throw new Error('embed ล้มเหลว');\nconst vec = '[' + e.embedding.values.map(v => Number(v).toFixed(8)).join(',') + ']';\nconst gids = Array.isArray(p.group_ids) ? p.group_ids.map(function(x){ return parseInt(x); }).filter(function(x){ return x > 0; }) : [];\nconst gid = gids.length ? gids : ((p.group_id === null || p.group_id === undefined) ? null : [parseInt(p.group_id)]);\nconst topk = Math.max(1, Math.min(10, parseInt(p.top_k) || 4));\nconst where = (!gid || !gid.length) ? '' : ` AND (c.metadata->>'group_id')::int IN (${gid.join(',')})`;\nconst sql = `SELECT c.content, c.metadata, 1 - (c.embedding <=> '${vec}'::vector) AS sim FROM rag_chunks c WHERE 1=1${where} ORDER BY c.embedding <=> '${vec}'::vector LIMIT ${topk}`;\nreturn [{ json: { ...p, embedding: e.embedding, sql: sql } }];"
+      }
+    },
+    {
+      "id": "4095715f-b0b0-4581-b206-f73b32d8716c",
+      "name": "Vector Search (group-safe)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1020,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "8c707ea6-f589-4a08-8aa3-73a908df6a20",
+      "name": "Relational Context",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1020,
+        480
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT g.name, COUNT(c.id) AS chunks FROM rag_groups g LEFT JOIN rag_chunks c ON (c.metadata->>'group_id')::int = g.id GROUP BY g.name ORDER BY g.id",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "a36ed36e-1285-4aff-9b86-24f44ba7cf55",
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.1,
+      "position": [
+        1220,
+        390
+      ],
+      "parameters": {
+        "mode": "append"
+      }
+    },
+    {
+      "id": "c59b126a-ef39-4e3c-879f-518e787309d8",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1420,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items = $input.all().map(r => r.json);\nconst rows = items.filter(r => r.content !== undefined);\nconst rel = items.filter(r => r.name !== undefined);\nconst pre = $('Attach Params').first().json;\nconst ctx = rows.map((r, i) => `[${i + 1}] (group=${(r.metadata||{}).group_name||''}, src=${(r.metadata||{}).title||''}, sim=${Number(r.sim||0).toFixed(3)})\\n${r.content}${(r.metadata||{}).image_url ? '\\n[image: ' + r.metadata.image_url + ']' : ''}`).join('\\n\\n');\nconst relTxt = 'groups: ' + rel.map(r => r.name + '(' + r.chunks + ')').join(', ');\nreturn [{ json: { question: pre.question || '', session_id: pre.session_id || '', context: ctx, rel: relTxt } }];"
+      }
+    },
+    {
+      "id": "9f5c9315-c1aa-4fb2-8051-7c01f11d7da6",
+      "name": "Get QA Model",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1560,
+        160
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE((SELECT value FROM app_settings WHERE key = 'llm.qa'), (SELECT value FROM app_settings WHERE key = 'voice.llm_model'), 'gemini') AS v",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "8c80f8dc-7b02-46e6-9593-76274e16c7ee",
+      "name": "IF Use Local LLM?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1780,
+        160
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "ea11153f-8a74-4549-99cb-2c0cafb8d37d",
+              "leftValue": "={{ ((() => { try { return $('Get QA Model').first().json.v; } catch(e) { return 'gemini'; } })() === 'qwen3:4b') }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "eab9ab83-c245-4beb-8d5d-b511e144547a",
+      "name": "Build Mem Read",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1890,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const b = $('Build Prompt').first().json;\nlet sid = (b.session_id || '').toString();\nif (!/^[A-Za-z0-9:_-]{1,128}$/.test(sid)) sid = 'web-default';\nconst q = (s) => s.replace(/'/g, \"''\");\nreturn [{ json: { sql: `SELECT COALESCE((SELECT json_agg(message ORDER BY id DESC) FROM (SELECT message, id FROM n8n_chat_histories WHERE session_id = '${q(sid)}' ORDER BY id DESC LIMIT 10) t), '[]'::json) AS history` } }];"
+      }
+    },
+    {
+      "id": "aadc80cf-599e-482f-ab1d-43729e3efde6",
+      "name": "Read Mem History",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1945,
+        40
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "1d2k0urW1mECDLrE",
+          "name": "RAG Postgres (postgres-rag:5432 / ragdb)"
+        }
+      }
+    },
+    {
+      "id": "3abb9b7b-04f4-4779-a55a-f6985b3ada52",
+      "name": "Build Ollama RAG",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const b = $('Build Prompt').first().json;\nlet hist = [];\ntry { const h = $('Read Mem History').first().json.history; hist = Array.isArray(h) ? h.slice().reverse() : []; } catch(e) { hist = []; }\nconst hlines = hist.filter(m => m && (m.content || '').toString().trim()).slice(-10).map(m => ((m.type === 'ai' ? 'บอท: ' : 'ผู้ใช้: ') + (m.content || '').toString().trim().slice(0, 400)));\nconst hblock = hlines.length ? ('\\n\\nประวัติการสนทนาก่อนหน้า:\\n' + hlines.join('\\n')) : '';\nconst content = 'คำถาม: ' + (b.question || '') + hblock + '\\n\\n<context>\\n' + (b.context || '') + '\\n</context>\\n\\nข้อมูลเสริม(relational): ' + (b.rel || '') + '\\n\\nตอบตามกติกาด้านบนเป็นภาษาไทย (ใช้ประวัติประกอบเมื่อคำถามอ้างถึงเรื่องก่อนหน้า)';\nreturn [{ json: { system: \"You are the knowledge assistant of TripThai/ChatDesk (Thai hotel & org QA).\\nSTRICT RULES:\\n1) Answer ONLY from the provided <context>. Reply in Thai, concise (2-5 sentences for chat).\\n2) If the context has nothing relevant, say exactly: \\\"ไม่พบข้อมูลนี้ในฐานความรู้ กรุณาติดต่อเจ้าหน้าที่ค่ะ\\\" — never invent prices, policies, dates, names or contacts.\\n3) Never hallucinate numbers. Quote exactly as in context.\\n4) IMAGES: context rows may include [image: URL]. When the user asks to see a picture AND a row has one, mention it briefly; put each URL on its own line verbatim (raw URL only) so the UI can render it.\\n5) Cite the source group/title briefly when useful.\\n6) Conversation history is ONLY for resolving what the question refers to (pronouns and follow-ups). NEVER copy facts, numbers, policies, laws or specs from history. Facts must come from the <context> section only, even if history says otherwise.\", messages: [{ role: 'user', content: content }] } }];"
+      }
+    },
+    {
+      "id": "165bb734-a45e-4e1c-9e5d-0a530f571627",
+      "name": "Ollama RAG",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2220,
+        160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/chat",
+        "options": {
+          "timeout": 120000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\": \"qwen3:4b-instruct\", \"stream\": false, \"options\": {\"temperature\": 0.2, \"num_predict\": 512}, \"system\": {{ $json.system.toJsonString() }}, \"messages\": {{ $json.messages.toJsonString() }}}"
+      }
+    },
+    {
+      "id": "3c11f86f-51b1-401e-8ec4-9ae786e92407",
+      "name": "Shape Ollama RAG",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2440,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const it = $input.first().json;\nlet t = '';\ntry { t = ((it.message || {}).content || '').toString(); } catch(e) {}\nt = t.replace(/^[\\s\\S]*?<\\/think>/, '').replace(/<think>[\\s\\S]*?<\\/think>/g, '').trim();\nif (!t) throw new Error('Local LLM ไม่ตอบ');\nreturn [{ json: { output: t.slice(0, 2000) } }];"
+      }
+    },
+    {
+      "id": "12bee899-5ec6-4b8a-8114-14c3945d0c21",
+      "name": "Build Mem Save",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2550,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const a = $input.first().json;\nconst b = $('Build Prompt').first().json;\nlet sid = (b.session_id || '').toString();\nif (!/^[A-Za-z0-9:_-]{1,128}$/.test(sid)) sid = 'web-default';\nconst q = (s) => (s || '').toString().replace(/'/g, \"''\");\nconst hq = (b.question || '').toString().slice(0, 2000);\nconst an = ((a.output || '').toString()).slice(0, 2000);\nconst hj = JSON.stringify({ type: 'human', content: hq });\nconst aj = JSON.stringify({ type: 'ai', content: an });\nconst sql = `WITH ins AS (INSERT INTO n8n_chat_histories (session_id, message) VALUES ('${q(sid)}', '${q(hj)}'::jsonb), ('${q(sid)}', '${q(aj)}'::jsonb) RETURNING id), del AS (DELETE FROM n8n_chat_histories WHERE session_id = '${q(sid)}' AND id NOT IN (SELECT id FROM n8n_chat_histories WHERE session_id = '${q(sid)}' ORDER BY id DESC LIMIT 60) RETURNING 1) SELECT (SELECT COUNT(*) FROM ins) AS saved, (SELECT COUNT(*) FROM del) AS pruned`;\nreturn [{ json: { sql: sql } }];"
+      }
+    },
+    {
+      "id": "4363850d-f9c6-4a89-9fa9-7b5ac1597da8",
+      "name": "Save Mem Turn",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        2660,
+        40
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "1d2k0urW1mECDLrE",
+          "name": "RAG Postgres (postgres-rag:5432 / ragdb)"
+        }
+      }
+    },
+    {
+      "id": "d99f38ee-7b21-4994-bd18-400db46c5b75",
+      "name": "Pass Answer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2770,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const t = $('Shape Ollama RAG').first().json;\nreturn [{ json: { output: (t.output || '').toString() } }];"
+      }
+    },
+    {
+      "id": "885bdc34-a934-45d0-a7a7-30c7472c21b2",
+      "name": "RAG Agent (Gemini)",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1640,
+        300
+      ],
+      "parameters": {
+        "options": {
+          "maxIterations": 3,
+          "systemMessage": "You are the knowledge assistant of TripThai/ChatDesk (Thai hotel & org QA).\nSTRICT RULES:\n1) Answer ONLY from the provided <context>. Reply in Thai, concise (2-5 sentences for chat).\n2) If the context has nothing relevant, say exactly: \"ไม่พบข้อมูลนี้ในฐานความรู้ กรุณาติดต่อเจ้าหน้าที่ค่ะ\" — never invent prices, policies, dates, names or contacts.\n3) Never hallucinate numbers. Quote exactly as in context.\n4) IMAGES: context rows may include [image: URL]. When the user asks to see a picture AND a row has one, mention it briefly; put each URL on its own line verbatim (raw URL only) so the UI can render it.\n5) Cite the source group/title briefly when useful."
+        },
+        "promptType": "define",
+        "text": "=คำถาม: {{ $('Build Prompt').first().json.question }}\n\n<context>\n{{ $('Build Prompt').first().json.context }}\n</context>\n\nข้อมูลเสริม(relational): {{ $('Build Prompt').first().json.rel }}\n\nตอบตามกติกาด้านบนเป็นภาษาไทย"
+      }
+    },
+    {
+      "id": "1fb60d52-0969-4d0a-baa0-8ee739293469",
+      "name": "Gemini 2.5 Flash",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1640,
+        560
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "VuE8YX5cbPUw7Ay8",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      },
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {
+          "temperature": 0.2
+        }
+      }
+    },
+    {
+      "id": "8887e7d8-af57-4aad-bd29-df72b1f3a53b",
+      "name": "Session Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.4,
+      "position": [
+        1820,
+        560
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1d2k0urW1mECDLrE",
+          "name": "RAG Postgres (postgres-rag:5432 / ragdb)"
+        }
+      },
+      "parameters": {
+        "options": {},
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Build Prompt').first().json.session_id || 'default-web' }}",
+        "tableName": "n8n_chat_histories"
+      }
+    },
+    {
+      "id": "7d9713ef-dedc-46d6-aa26-4181b78a087e",
+      "name": "Guard Empty",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2020,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const out = (($input.first().json.output ?? '').toString()).trim();\nif (!out) { return [{ json: { output: 'ขออภัย ระบบขัดข้องชั่วคราว กรุณาถามใหม่อีกครั้งค่ะ' } }]; }\nreturn $input.all();"
+      }
+    },
+    {
+      "id": "98949a93-b147-42c5-897b-469b927479e8",
+      "name": "Shape Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2220,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const a = $input.first().json;\nconst rows = ($('Vector Search (group-safe)').all() || []).map(r => r.json);\nreturn [{ json: { ok: true, text: (a.output || '').toString(),\n  images: rows.filter(r => r.metadata && r.metadata.image_url).map(r => r.metadata.image_url).slice(0, 5),\n  sources: rows.map(r => ((r.metadata||{}).group_name||'') + '/' + ((r.metadata||{}).title||'')).filter(s => s !== '/').slice(0, 8) } }];"
+      }
+    },
+    {
+      "id": "77998b96-303a-4a03-a77a-09a5dd6cc3af",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2420,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Answer": {
+      "main": [
+        [
+          {
+            "node": "Prep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep": {
+      "main": [
+        [
+          {
+            "node": "Get Gemini Key",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Relational Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Gemini Key": {
+      "main": [
+        [
+          {
+            "node": "Embed Query (Gemini 768)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embed Query (Gemini 768)": {
+      "main": [
+        [
+          {
+            "node": "Attach Params",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach Params": {
+      "main": [
+        [
+          {
+            "node": "Vector Search (group-safe)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vector Search (group-safe)": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Relational Context": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Results": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Get QA Model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get QA Model": {
+      "main": [
+        [
+          {
+            "node": "IF Use Local LLM?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Use Local LLM?": {
+      "main": [
+        [
+          {
+            "node": "Build Mem Read",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "RAG Agent (Gemini)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Mem Read": {
+      "main": [
+        [
+          {
+            "node": "Read Mem History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Mem History": {
+      "main": [
+        [
+          {
+            "node": "Build Ollama RAG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Ollama RAG": {
+      "main": [
+        [
+          {
+            "node": "Ollama RAG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama RAG": {
+      "main": [
+        [
+          {
+            "node": "Shape Ollama RAG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Ollama RAG": {
+      "main": [
+        [
+          {
+            "node": "Build Mem Save",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Mem Save": {
+      "main": [
+        [
+          {
+            "node": "Save Mem Turn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Mem Turn": {
+      "main": [
+        [
+          {
+            "node": "Pass Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass Answer": {
+      "main": [
+        [
+          {
+            "node": "Guard Empty",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini 2.5 Flash": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "RAG Agent (Gemini)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Session Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "RAG Agent (Gemini)",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RAG Agent (Gemini)": {
+      "main": [
+        [
+          {
+            "node": "Guard Empty",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard Empty": {
+      "main": [
+        [
+          {
+            "node": "Shape Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Reply": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

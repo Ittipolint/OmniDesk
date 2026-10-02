@@ -1,0 +1,222 @@
+{
+  "_export": {
+    "workflowId": "ArEILCz3JCn3SibD",
+    "active": true,
+    "exportedAt": "2026-10-02T20:53:38Z",
+    "note": "Secrets replaced with __PLACEHOLDERS__. See README."
+  },
+  "name": "ChatDesk API-13 Odoo Lead (order to CRM)",
+  "nodes": [
+    {
+      "id": "025f42f7-fe23-4aa7-8ffc-7d8ff8466798",
+      "name": "Webhook Odoo Lead",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api-odoo-lead",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "7295b57d-cffa-43ae-9050-3d91112d4537"
+    },
+    {
+      "id": "9709d31d-4d2d-4e4e-9c20-b577d0d66e3c",
+      "name": "Prep",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const b = $input.first().json.body || $input.first().json || {};\nconst op = ((b.op || 'order').toString() === 'chat') ? 'chat' : 'order';\nconst out = { op: op, is_chat: (op === 'chat'), token: '__ODOO_SHARED_TOKEN__' };\nif (op === 'chat') {\n  out.channel = (b.channel || '').toString();\n  out.external_user_id = (b.external_user_id || b.userId || '').toString().slice(0, 128);\n  out.display_name = (b.display_name || '').toString().slice(0, 120);\n  out.text = (b.text || '').toString().slice(0, 500);\n  if (!out.channel || !out.external_user_id) throw new Error('need channel + external_user_id');\n} else {\n  const digits = ((s) => (s || '').toString().replace(/[^0-9]/g, ''))(b.phone);\n  if (!digits || digits.length < 9) throw new Error('bad phone');\n  const items = Array.isArray(b.items) ? b.items : (Array.isArray(b.lines) ? b.lines : []);\n  if (!items.length) throw new Error('empty items');\n  out.channel = (b.channel || 'shopweb').toString();\n  out.external_user_id = (b.external_user_id || b.userId || '').toString().slice(0, 128);\n  out.name = ((b.name || '').toString().slice(0, 120) || 'ลูกค้า ShopDee');\n  out.phone = digits;\n  out.address = (b.address || '').toString().slice(0, 500);\n  out.note = (b.note || '').toString().slice(0, 500);\n  out.payment = (b.payment || '').toString();\n  out.code = (b.code || '').toString().slice(0, 64);\n  out.total = Number(b.total) || 0;\n  out.items = items.map(function(l){ return { sku: (l.sku || '').toString().slice(0, 64), name: (l.name || '').toString(), price: Number(l.price) || 0, qty: Number(l.qty) || 1 }; });\n}\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "0d301b92-0e0c-4442-96ee-eca3010a849b",
+      "name": "IF Op Chat?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        640,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "50bcfa3f-d172-4f74-bc22-64153d927da8",
+              "leftValue": "={{ $json.is_chat }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "1ab87841-dfe0-4089-8219-f76695a3123f",
+      "name": "Odoo ChatLead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://odoo:8069/chatdesk/chat-lead",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "timeout": 60000
+        }
+      }
+    },
+    {
+      "id": "9dec7090-8108-41ed-99e3-6f125018be94",
+      "name": "Odoo Order",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        440
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://odoo:8069/chatdesk/order",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "timeout": 60000
+        }
+      }
+    },
+    {
+      "id": "e5c2529d-f116-4325-bdda-00f5799a3e96",
+      "name": "Shape Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1080,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const r = $input.first().json;\nconst d = (r && r.result !== undefined) ? r.result : r;\nif (!d || d.ok !== true) throw new Error('odoo failed: ' + JSON.stringify(d).slice(0, 200));\nreturn [{ json: d }];"
+      }
+    },
+    {
+      "id": "d083d23b-ab9b-4ac9-9c71-8ed07d8dc559",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1300,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Odoo Lead": {
+      "main": [
+        [
+          {
+            "node": "Prep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep": {
+      "main": [
+        [
+          {
+            "node": "IF Op Chat?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Op Chat?": {
+      "main": [
+        [
+          {
+            "node": "Odoo ChatLead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Odoo Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Odoo ChatLead": {
+      "main": [
+        [
+          {
+            "node": "Shape Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Odoo Order": {
+      "main": [
+        [
+          {
+            "node": "Shape Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Result": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

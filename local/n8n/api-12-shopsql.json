@@ -1,0 +1,403 @@
+{
+  "_export": {
+    "workflowId": "WUrb2kUqZBoY2E5Y",
+    "active": true,
+    "exportedAt": "2026-10-02T20:53:38Z",
+    "note": "Secrets replaced with __PLACEHOLDERS__. See README."
+  },
+  "name": "ChatDesk API-12 Shop SQL (structured lookup)",
+  "nodes": [
+    {
+      "id": "53b4b524-4e2a-48ff-92cb-01e2444f6fe0",
+      "name": "Webhook Shop SQL",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api-shop-sql",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "6b023419-0efc-4864-a7cc-186107850f0f"
+    },
+    {
+      "id": "5459a29d-5fea-4db1-8d34-a9e347baeab4",
+      "name": "Prep",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const b = $input.first().json.body || $input.first().json || {};\nconst hist = Array.isArray(b.history) ? b.history.filter(h => h && h.text).slice(-4) : [];\nreturn [{ json: { text: (b.text || '').toString().slice(0, 2000),\n  userId: (b.userId || '').toString(), history: hist } }];"
+      }
+    },
+    {
+      "id": "a71350ec-a96f-4591-929f-8d27068d6133",
+      "name": "Route SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const p = $('Prep').first().json;\nconst q = (p.text || '').toString();\nlet need_sql = false, kind = 'rag';\nif (q.trim()) {\n  const hasCode = /SD-?\\d{3,}/i.test(q);\n  const hasPhone = /0\\d[\\d\\- ]{7,}/.test(q);\n  const liveKw = /(ราคา|สต็อก|สต๊อก|คงเหลือ|เหลือ|ออเดอร์|คำสั่งซื้อ|พัสดุ|สถานะ|จัดส่ง|โอน|ชำระ|คูปอง|ส่วนลด|ขายแล้ว|บาท|สินค้า|รุ่น|สี|ไซส์)/.test(q);\n  const recKw = /(แนะนำ|เปรียบเทียบ|เปรียบ|คุ้ม|ดีไหม|เลือก|ตัวไหน|รุ่นไหน|ดีกว่า)/.test(q);\n  const trackKw = /(เหลือ|คงเหลือ|สถานะ|ออเดอร์|พัสดุ|เช็ค|เช็ก|ติดตาม|มีของ|หมด)/.test(q);\n  const chitchat = /^(สวัสดี|หวัดดี|ดีครับ|ดีค่ะ|hello|hi|hey|ขอบคุณ|ขอบใจ|ลาก่อน|บ๊ายบาย|bye|โอเค|ตกลง|ทดสอบ|test|เทส)[\\s!?ครับค่ะคะ]*$/i.test(q.trim());\n  if (hasCode || hasPhone || trackKw) { need_sql = true; kind = 'lookup'; }\n  else if (liveKw || recKw) { need_sql = true; kind = 'both'; }\n  else if (!chitchat) { need_sql = true; kind = 'both'; }\n}\nreturn [{ json: { need_sql, kind, t0: Date.now() } }];"
+      }
+    },
+    {
+      "id": "381679cb-5942-480e-b20b-e1f87378e368",
+      "name": "IF Need SQL?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        860,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "2be9c9ad-61c7-4c5f-af3a-04fb0e7d8cba",
+              "leftValue": "={{ $json.need_sql }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "bf361bf6-c412-48ca-b2e4-0b74135f32b5",
+      "name": "Build Template SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1080,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const p = $('Prep').first().json;\nconst t = (p.text || '').toString().trim();\nconst out = (sql) => [{ json: { sql_raw: sql } }];\nlet m = t.match(/\\b(SD-?[A-Za-z0-9]{3,})\\b/i);\nif (m) {\n  const code = m[1].replace(/-/g, '').toUpperCase();\n  return out(\"SELECT o.code,o.total,o.status,o.created_at,i.name,i.qty,i.price FROM shop_orders o\"\n    + \" LEFT JOIN shop_order_items i ON i.order_id=o.id WHERE REPLACE(UPPER(o.code),'-','')='\" + code.replace(/'/g, \"''\") + \"' LIMIT 50\");\n}\nm = t.match(/0\\d[\\d\\- ]{7,}/);\nif (m) {\n  const digits = m[0].replace(/\\D/g, '').slice(0, 10);\n  if (digits.length >= 9) return out(\"SELECT code,total,status,created_at FROM shop_orders WHERE cust_phone LIKE '%\" + digits + \"%' ORDER BY id DESC LIMIT 5\");\n}\nlet cap = null;\nconst bm = t.match(/ไม่เกิน\\s*([\\d,]+)/);\nif (bm) cap = parseInt(bm[1].replace(/,/g, ''), 10);\nlet s = t;\n['เท่าไร','เท่าไหร่','ราคา','สต็อก','สต๊อก','เหลือ','คงเหลือ','สถานะ','ออเดอร์','คำสั่งซื้อ','พัสดุ','เช็ค','เช็ก','ติดตาม','แนะนำ','เปรียบเทียบ','คุ้ม','หรือไม่','ดีไหม','ตัวไหน','รุ่นไหน','ดีกว่า','บาท','ไหม','มั้ย','ครับ','ค่ะ','คะ','อะไร','ยังไง','อย่างไร','กี่ชิ้น','ชิ้น','ขอทราบ','ขอถาม','อยากทราบ','ทราบ','ช่วยหา','ช่วย'].forEach(w => { s = s.split(w).join(' '); });\nif (bm) s = s.replace(bm[0], ' ');\nconst STOP = new Set(['ที่','และ','กับ','ของ','ใน','คือ','มี','หรือ','ๆ','ตัว','รุ่น','สี','ไซส์','อัน','เลข','เบอร์','รหัส','อันไหน','แบบ','อยาก','ได้','ให้','หน่อย','ขอดู','ทั้งหมด','หา','ถาม','เท่า','กี่']);\nconst SYN = {'มือถือ':['มือถือ','สมาร์ทโฟน','โทรศัพท์'],'จอ':['จอ','มอนิเตอร์','Monitor'],'มอนิเตอร์':['มอนิเตอร์','จอ','Monitor'],'หูฟัง':['หูฟัง','True Wireless'],'นาฬิกา':['นาฬิกา','Watch','สมาร์ทวอทช์'],'แล็ปท็อป':['แล็ปท็อป','โน้ตบุ๊ก','Laptop','Notebook'],'โน้ตบุ๊ก':['โน้ตบุ๊ก','แล็ปท็อป','Laptop'],'แท็บเล็ต':['แท็บเล็ต','Tablet'],'กล้อง':['กล้อง','Camera','เว็บแคม'],'คีย์บอร์ด':['คีย์บอร์ด','Keyboard'],'เมาส์':['เมาส์','Mouse'],'ลำโพง':['ลำโพง','Speaker'],'พัดลม':['พัดลม','Fan'],'แอร์':['แอร์','เครื่องปรับอากาศ'],'ทีวี':['ทีวี','TV'],'ตู้เย็น':['ตู้เย็น'],'รองเท้า':['รองเท้า','ผ้าใบ','Sneaker'],'กระเป๋า':['กระเป๋า'],'เสื้อ':['เสื้อ','Shirt'],'กางเกง':['กางเกง','ยีนส์']};\nconst toks = [];\ns.split(/\\s+/).forEach(tok => {\n  tok = tok.replace(/^[ \\t\\n\\r\"'.,:;!?()\\[\\]]+|[ \\t\\n\\r\"'.,:;!?()\\[\\]]+$/g, '');\n  if (!tok || STOP.has(tok) || tok.length < 2 || toks.length >= 4) return;\n  toks.push(tok);\n});\nif (!toks.length && !(cap > 0)) return out('');\nconst esc = (x) => String(x).replace(/'/g, \"''\").replace(/\\\\/g, '');\nconst where = ['is_active=TRUE'];\ntoks.forEach(tok => {\n  if (/^\\d+$/.test(tok)) {\n    where.push(\"(name ~* '(^|[^0-9])\" + tok + \"([^0-9]|$)')\");\n  } else {\n    const alts = SYN[tok] || [tok];\n    where.push('(' + alts.map(a => \"name ILIKE '%\" + esc(a) + \"%'\" ).join(' OR ') + ')');\n  }\n});\nif (cap > 0) where.push('price<=' + cap);\nreturn out('SELECT sku,name,price,old_price,stock,shop_name,image_url FROM shop_products WHERE ' + where.join(' AND ') + ' ORDER BY sold DESC LIMIT 10');"
+      }
+    },
+    {
+      "id": "2b2f55d3-b58c-45bb-b7fc-2fc60ca036de",
+      "name": "Validate Shop SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const prep = $('Prep').first().json;\nconst r = $('Route SQL').first().json;\nconst allow = ['shop_products','shop_orders','shop_order_items'];\nconst esc = (s) => (s || '').toString().replace(/'/g, \"''\");\nconst ms = Date.now() - (r.t0 || Date.now());\nconst aq = (ok, sql, rows, err) => `INSERT INTO ai_sql_audit(channel,user_ref,question,route,sql,rows,ms,ok,err) VALUES ('shop','${esc(prep.userId)}','${esc((prep.text || '').slice(0, 500))}','${r.kind || 'rag'}','${esc((sql || '').slice(0, 2000))}',${rows},${ms},${ok ? 'TRUE' : 'FALSE'},'${esc((err || '').slice(0, 300))}') RETURNING id`;\nconst fail = (reason) => [{ json: { valid: false, sql: '', used: [], reason, audit_sql: aq(false, '', 0, reason) } }];\nlet raw = '';\ntry { raw = (($input.first().json.sql_raw) || '').toString(); } catch(e) {}\nraw = raw.replace(/```sql|```/gi, '').trim().replace(/;+\\s*$/, '');\nif (!/^SELECT\\b/i.test(raw)) return fail('not-select');\nconst up = raw.toUpperCase();\nfor (const b of [';', '--', '/*', '*/', 'PG_']) { if (up.indexOf(b) >= 0) return fail('forbidden:' + b); }\nfor (const b of ['UNION','INSERT','UPDATE','DELETE','DROP','CREATE','ALTER','TRUNCATE','COPY','GRANT','REVOKE','INFORMATION_SCHEMA']) {\n  if (new RegExp('\\\\b' + b + '\\\\b', 'i').test(raw)) return fail('forbidden:' + b);\n}\nconst used = [...raw.matchAll(/\\b(?:FROM|JOIN)\\s+\"?([A-Za-z_][\\w$]*)\"?/gi)].map(m => m[1].toLowerCase());\nif (!used.length || !used.every(t => allow.indexOf(t) >= 0)) return fail('bad-table');\nconst orderTbl = used.indexOf('shop_orders') >= 0 || used.indexOf('shop_order_items') >= 0;\nif (orderTbl && !/(code|cust_phone|order_id)/i.test(raw)) return fail('order-needs-key');\nif (used.indexOf('shop_products') >= 0 && !/is_active/i.test(raw)) return fail('needs-is_active');\nlet sql = raw;\nconst m = sql.match(/LIMIT\\s+(\\d+)/i);\nif (!m) sql += ' LIMIT 50';\nelse if (parseInt(m[1], 10) > 50) sql = sql.replace(/LIMIT\\s+\\d+/i, 'LIMIT 50');\nreturn [{ json: { valid: true, sql, used, reason: '', audit_sql: aq(true, sql, 0, '') } }];"
+      }
+    },
+    {
+      "id": "fb587685-9769-4906-bbb9-30d6a54cf54b",
+      "name": "IF SQL Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1520,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "5546d9bb-6e4d-4b76-8be8-3f5118001cfe",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "76fde421-eef1-40c1-9100-5e070c1b6ef7",
+      "name": "Run Shop SQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1740,
+        320
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "SbBJYXyS7MK0fYqr",
+          "name": "ShopDee Postgres (shopdee read-only)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": false
+    },
+    {
+      "id": "738a7513-4f32-4b79-be92-08d38df7fa85",
+      "name": "Shape Shop Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1960,
+        320
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const v = $('Validate Shop SQL').first().json;\nconst prep = $('Prep').first().json;\nconst r = $('Route SQL').first().json;\nconst esc = (s) => (s || '').toString().replace(/'/g, \"''\");\nconst ms = Date.now() - (r.t0 || Date.now());\nlet rows = [];\ntry { rows = $('Run Shop SQL').all().map(x => x.json).filter(x => x && typeof x === 'object' && !x.error && Object.keys(x).length > 0).slice(0, 50); } catch(e) {}\nconst fmtN = (n) => Number(n || 0).toLocaleString('en-US');\nconst fmtV = (x) => (x === null || x === undefined) ? '-' : String(x).slice(0, 120);\nconst maskPhone = (s) => String(s || '').replace(/(0\\d)(\\d+)(\\d{3})/, (m, a, b, c) => a + 'X'.repeat(Math.min(b.length, 6)) + c);\nconst maskAddr = (s) => { s = String(s || ''); return s.length > 14 ? s.slice(0, 6) + '…' + s.slice(-8) : s; };\nconst masked = rows.map(row => {\n  const o = {}; Object.keys(row).slice(0, 10).forEach(k => { o[k] = row[k]; });\n  if (o.cust_phone) o.cust_phone = maskPhone(o.cust_phone);\n  if (o.address) o.address = maskAddr(o.address);\n  if (o.image_url) o.image_url_display = \"รูป: \" + o.image_url;\n  return o;\n});\nconst allImageUrls = rows.filter(function(r){ return r && r.image_url; }).map(function(r){ return r.image_url; }).slice(0, 5);\nconst lines = masked.map((o, i) => '(' + (i+1) + ') ' + Object.keys(o).map(k => k + '=' + fmtV(o[k])).join(', '));\nconst d = new Date(); const hh = String(d.getHours()).padStart(2, '0'), mm = String(d.getMinutes()).padStart(2, '0');\nconst block = rows.length ? ('【ข้อมูลสดจากฐานข้อมูลร้าน (' + hh + ':' + mm + ')】\\n' + lines.slice(0, 8).join('\\n') + (lines.length > 8 ? '\\n… (แสดง 8 จาก ' + lines.length + ' แถว)' : '')) : '';\nlet answer = '';\nif ((r.kind === 'lookup' || r.kind === 'both') && rows.length) {\n  const used = v.used || [];\n  if (used.indexOf('shop_orders') >= 0) {\n    const o = rows[0];\n    answer = `ออเดอร์ ${o.code} สถานะ ${o.status || '-'} ยอด ${fmtN(o.total)} บาท`;\n    const items = rows.filter(x => x.name).map(x => `• ${x.name} x${x.qty} = ${fmtN(x.price * x.qty)} บาท`);\n    if (items.length) answer += '\\n' + items.join('\\n');\n  } else if (rows.length === 1) {\n    const p = rows[0];\n    answer = `${p.name} ราคา ${fmtN(p.price)} บาท` + (p.old_price > p.price ? ` (ปกติ ${fmtN(p.old_price)})` : '') + ` ร้าน ${p.shop_name || '-'} สต็อก ${fmtN(p.stock)} ชิ้น`;\n  } else {\n    answer = 'พบ ' + rows.length + ' รายการ:\\n' + rows.map(p => `• ${p.name} — ${fmtN(p.price)} บาท (สต็อก ${fmtN(p.stock)})`).join('\\n');\n  }\n}\nconst src = rows.length ? ['DB สด: ' + (v.used || []).join(',') + ' (' + rows.length + ' แถว)'] : [];\nconst q1 = esc(prep.userId), q2 = esc((prep.text || '').slice(0, 500));\nconst q3 = (r.kind || 'rag'), q4 = esc((v.sql || '').slice(0, 2000));\nconst q5 = rows.length ? 'TRUE' : 'FALSE', q6 = rows.length ? '' : 'run-empty';\nconst audit_sql = \"INSERT INTO ai_sql_audit(channel,user_ref,question,route,sql,rows,ms,ok,err) VALUES ('shop','\" + q1 + \"','\" + q2 + \"','\" + q3 + \"','\" + q4 + \"',\" + rows.length + \",\" + ms + \",\" + q5 + \",'\" + q6 + \"') RETURNING id\";\nreturn [{ json: { shaped: true, kind: r.kind, sql_ok: rows.length > 0, sql_rows: rows.length, sql_text: block, sql_answer: answer, sql_sources: src, image_urls: (typeof allImageUrls !== \"undefined\" ? allImageUrls : []), audit_sql } }];"
+      }
+    },
+    {
+      "id": "d14d7c7f-f4ee-49c1-bf88-7fb3d675c6db",
+      "name": "Shape SQL Empty",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1960,
+        480
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const v = $('Validate Shop SQL').first().json;\nconst r = $('Route SQL').first().json;\nreturn [{ json: { shaped_empty: true, kind: r.kind, reason: (v && v.reason) || 'invalid', audit_sql: (v && v.audit_sql) || '' } }];"
+      }
+    },
+    {
+      "id": "4c2b0f09-9019-4eac-ad0a-acf6cd8e7bcd",
+      "name": "Save SQL Audit",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        2180,
+        320
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.audit_sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": false
+    },
+    {
+      "id": "35385454-1145-49c8-9b31-882d8955347b",
+      "name": "Shape SQL Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        320
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "let out = { ok: false, kind: 'rag', rows: 0, block: '', answer: '', sources: [], images: [], err: 'rag-only' };\ntry {\n  const s = $('Shape Shop Rows').first().json;\n  if (s && s.shaped) out = { ok: !!s.sql_ok, kind: s.kind || 'both', rows: s.sql_rows || 0, block: s.sql_text || '', answer: s.sql_answer || '', sources: s.sql_sources || [], images: s.image_urls || [], err: s.sql_ok ? '' : 'run-empty' };\n} catch(e) {}\nif (!out.ok && !out.rows) {\n  try {\n    const v = $('Shape SQL Empty').first().json;\n    if (v && v.shaped_empty) out = { ok: false, kind: v.kind || 'both', rows: 0, block: '', answer: '', sources: [], err: v.reason || 'invalid' };\n  } catch(e2) {}\n}\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "af0660d6-02f9-4778-8f7f-b299c805211b",
+      "name": "Respond SQL",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2620,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Shop SQL": {
+      "main": [
+        [
+          {
+            "node": "Prep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep": {
+      "main": [
+        [
+          {
+            "node": "Route SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Need SQL?": {
+      "main": [
+        [
+          {
+            "node": "Build Template SQL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Shape SQL Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Template SQL": {
+      "main": [
+        [
+          {
+            "node": "Validate Shop SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Shop SQL": {
+      "main": [
+        [
+          {
+            "node": "IF SQL Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF SQL Valid?": {
+      "main": [
+        [
+          {
+            "node": "Run Shop SQL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Shape SQL Empty",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Shop SQL": {
+      "main": [
+        [
+          {
+            "node": "Shape Shop Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Shop Rows": {
+      "main": [
+        [
+          {
+            "node": "Save SQL Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape SQL Empty": {
+      "main": [
+        [
+          {
+            "node": "Save SQL Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save SQL Audit": {
+      "main": [
+        [
+          {
+            "node": "Shape SQL Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape SQL Response": {
+      "main": [
+        [
+          {
+            "node": "Respond SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route SQL": {
+      "main": [
+        [
+          {
+            "node": "IF Need SQL?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

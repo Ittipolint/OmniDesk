@@ -1,0 +1,125 @@
+{
+  "_export": {
+    "workflowId": "AF5r9VlY6DD7xiis",
+    "active": true,
+    "exportedAt": "2026-10-02T20:53:38Z",
+    "note": "Secrets replaced with __PLACEHOLDERS__. See README."
+  },
+  "name": "[LOCAL] ChatDesk Manager - Push FB",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "117be6a7-0f8b-49f1-b5cb-3fb4852934de",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        176,
+        16
+      ],
+      "id": "fb-push-0001-0000-0000-000000000001",
+      "name": "Webhook",
+      "webhookId": "891504bc-6172-4206-aeba-91e95c2c4544"
+    },
+    {
+      "parameters": {
+        "jsCode": "/* Build Facebook Messenger Graph API payload from api/send.php body\n * body: { userId, text, type, mediaUrl, mediaPreviewUrl, stickerPackage?, stickerId? }\n */\nconst body = $('Webhook').first().json.body || {};\nconst userId = String(body.userId || '').trim();\nconst type = String(body.type || 'text');\nif (!userId) { throw new Error('Missing userId'); }\n\nlet message;\nif (type === 'image') {\n  const url = body.mediaUrl || '';\n  if (!url) { throw new Error('Missing mediaUrl for image'); }\n  message = { attachment: { type: 'image', payload: { url: url, is_reusable: true } } };\n} else if (type === 'video' || type === 'audio' || type === 'file') {\n  const url = body.mediaUrl || '';\n  if (!url) { throw new Error('Missing mediaUrl for ' + type); }\n  message = { attachment: { type: type, payload: { url: url } } };\n} else if (type === 'sticker') {\n  const url = body.mediaUrl || '';\n  message = url\n    ? { attachment: { type: 'image', payload: { url: url, is_reusable: true } } }\n    : { text: '???? (???????????????????????????)' };\n} else {\n  message = { text: String(body.text || '') };\n}\n\nreturn [{ json: {\n  recipient: { id: userId },\n  message: message,\n  messaging_type: 'RESPONSE',\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        16
+      ],
+      "id": "fb-push-0001-0000-0000-000000000002",
+      "name": "Create FB Message"
+    },
+    {
+      "parameters": {
+        "sendBody": true,
+        "specifyBody": "json",
+        "method": "POST",
+        "url": "https://graph.facebook.com/v26.0/me/messages",
+        "jsonBody": "={{ $json }}",
+        "options": {},
+        "genericAuthType": "httpHeaderAuth",
+        "authentication": "genericCredentialType"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        656,
+        16
+      ],
+      "id": "fb-push-0001-0000-0000-000000000003",
+      "name": "Send FB Push API",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "0mEqhx99gPe7KUV2",
+          "name": "ChatDesk LINE Push Header"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\":true,\"sent\":true}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        896,
+        16
+      ],
+      "id": "fb-push-0001-0000-0000-000000000004",
+      "name": "Reply ChatDesk"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Create FB Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create FB Message": {
+      "main": [
+        [
+          {
+            "node": "Send FB Push API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send FB Push API": {
+      "main": [
+        [
+          {
+            "node": "Reply ChatDesk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "pinData": {}
+}

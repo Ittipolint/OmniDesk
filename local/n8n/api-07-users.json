@@ -1,0 +1,249 @@
+{
+  "_export": {
+    "workflowId": "4C8QHmcAJ02jW7Z9",
+    "active": true,
+    "exportedAt": "2026-10-02T20:53:37Z",
+    "note": "Secrets replaced with __PLACEHOLDERS__. See README."
+  },
+  "name": "ChatDesk API-07 Users (admin CRUD)",
+  "nodes": [
+    {
+      "id": "99193b31-2116-462d-814e-5dbb98b3d59c",
+      "name": "Webhook Users",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api-users",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "5c4d3102-5b45-47e2-84c5-e0a983593ec7"
+    },
+    {
+      "id": "9ba10b29-8e42-4b09-be24-e999b6701272",
+      "name": "Build SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const b = $input.first().json.body || $input.first().json || {};\nconst op = (b.op || '').toString();\nconst q = (s) => (s || '').toString().replace(/'/g, \"''\");\nconst qi = (v) => { const n = parseInt(v); if (isNaN(n)) throw new Error('bad id'); return n; };\nlet sql = '', sql2 = '';\nif (op === 'list') {\n  sql = `SELECT u.id, u.username, u.display_name, u.is_active, u.created_at, COALESCE(string_agg(g.name, ',' ORDER BY g.name), '') AS groups FROM cd_users u LEFT JOIN cd_user_groups ug ON ug.user_id = u.id LEFT JOIN cd_groups g ON g.id = ug.group_id GROUP BY u.id ORDER BY u.id`;\n} else if (op === 'list-groups') {\n  sql = `SELECT id, name, description FROM cd_groups ORDER BY id`;\n} else if (op === 'create') {\n  const un = (b.username || '').toString().trim();\n  if (!/^[A-Za-z0-9_.@-]{3,64}$/.test(un)) throw new Error('ชื่อผู้ใช้ไม่ถูกต้อง');\n  const ph = (b.pass_hash || '').toString();\n  if (ph.length < 20 || ph[0] !== '$') throw new Error('pass_hash ไม่ถูกต้อง');\n  const dn = q((b.display_name || '').slice(0, 150));\n  const gids = Array.isArray(b.groups) ? b.groups.map(g => parseInt(g)).filter(g => g > 0) : [];\n  sql = `INSERT INTO cd_users (username, pass_hash, display_name) VALUES ('${q(un)}', '${q(ph)}', '${dn}') RETURNING id`;\n  sql2 = gids.length ? '__GRANTS__:' + gids.join(',') + ':' + q(un) : '';\n} else if (op === 'setpass') {\n  const id = qi(b.id);\n  const ph = (b.pass_hash || '').toString();\n  if (ph.length < 20 || ph[0] !== '$') throw new Error('pass_hash ไม่ถูกต้อง');\n  sql = `UPDATE cd_users SET pass_hash = '${q(ph)}' WHERE id = ${id}`;\n} else if (op === 'active') {\n  const id = qi(b.id);\n  sql = `UPDATE cd_users SET is_active = ${parseInt(b.is_active) === 1 ? 1 : 0} WHERE id = ${id}`;\n} else if (op === 'display') {\n  const id = qi(b.id);\n  sql = `UPDATE cd_users SET display_name = '${q((b.display_name || '').slice(0, 150))}' WHERE id = ${id}`;\n} else if (op === 'groups') {\n  const id = qi(b.id);\n  const gids = Array.isArray(b.groups) ? b.groups.map(g => parseInt(g)).filter(g => g > 0) : [];\n  sql = `DELETE FROM cd_user_groups WHERE user_id = ${id}`;\n  sql2 = gids.length ? '__GRANTSID__:' + gids.join(',') + ':' + id : '';\n} else if (op === 'delete') {\n  const id = qi(b.id);\n  sql = `DELETE FROM cd_users WHERE id = ${id}`;\n} else if (op === 'group_add') {\n  const nm = (b.name || '').toString().trim().toUpperCase();\n  if (!/^[A-Z0-9_]{2,32}$/.test(nm)) throw new Error('ชื่อกลุ่มไม่ถูกต้อง');\n  sql = `INSERT INTO cd_groups (name, description) VALUES ('${nm}', '${q((b.description || '').slice(0, 255))}')`;\n} else if (op === 'group_del') {\n  const id = qi(b.id);\n  sql = `DELETE FROM cd_groups WHERE id = ${id} AND name NOT IN ('ADMIN','STAFF')`;\n} else { throw new Error('unknown op'); }\nreturn [{ json: { sql: sql, sql2: sql2, op: op } }];"
+      }
+    },
+    {
+      "id": "e9c64e76-9073-4540-8f27-910816aad604",
+      "name": "Run SQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        640,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "44777b61-3413-48b8-a82c-2f6802f1b384",
+      "name": "IF Has SQL2?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        860,
+        480
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "dc79d3fa-b621-4824-a4cf-26616ed56c4c",
+              "leftValue": "={{ (($('Build SQL').first().json.sql2 || '') !== '') }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "741811b4-b513-4be7-ae5a-dbb05599320f",
+      "name": "Build Grants",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1080,
+        480
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const prev = $input.first().json;\nconst b = $('Build SQL').first().json;\nlet parts = (b.sql2 || '').split(':');\nconst kind = parts[0] || '';\nconst gids = (parts[1] || '').split(',').map(g => parseInt(g)).filter(g => g > 0);\nconst who = parts.slice(2).join(':');\nlet sql = '';\nif (kind === '__GRANTS__') {\n  sql = gids.map(g => `INSERT INTO cd_user_groups (user_id, group_id) SELECT id, ${g} FROM cd_users WHERE username = '${who.replace(/'/g, \"''\")}' ON CONFLICT DO NOTHING;`).join('');\n} else if (kind === '__GRANTSID__') {\n  sql = gids.map(g => `INSERT INTO cd_user_groups (user_id, group_id) VALUES (${parseInt(who)}, ${g}) ON CONFLICT DO NOTHING;`).join('');\n} else { sql = 'SELECT 1'; }\nreturn [{ json: { sql: sql } }];"
+      }
+    },
+    {
+      "id": "c02f97aa-1643-4038-9ad9-c3e14735b511",
+      "name": "Run Grants",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1300,
+        480
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "iGiNCBmmhZ9xgFn8",
+          "name": "ChatDesk Postgres (chatdesk)"
+        }
+      }
+    },
+    {
+      "id": "69a31944-a5f1-4384-9a5f-153de3464726",
+      "name": "Shape",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const op = $('Build SQL').first().json.op || '';\nconst rows = $('Run SQL').all().map(r => r.json);\nif (op === 'list') {\n  const users = rows.map(u => ({ ...u, groups: (u.groups || '').split(',').filter(Boolean) }));\n  return [{ json: { ok: true, users: users } }];\n}\nif (op === 'list-groups') {\n  return [{ json: { ok: true, groups: rows } }];\n}\nif (op === 'create') {\n  const r = rows.find(r => r.id !== undefined) || {};\n  return [{ json: { ok: true, id: r.id || 0 } }];\n}\nreturn [{ json: { ok: true } }];"
+      }
+    },
+    {
+      "id": "37d34219-34ec-4217-a209-e937727a9909",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1740,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Users": {
+      "main": [
+        [
+          {
+            "node": "Build SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build SQL": {
+      "main": [
+        [
+          {
+            "node": "Run SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run SQL": {
+      "main": [
+        [
+          {
+            "node": "IF Has SQL2?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Has SQL2?": {
+      "main": [
+        [
+          {
+            "node": "Build Grants",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Shape",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Grants": {
+      "main": [
+        [
+          {
+            "node": "Run Grants",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Grants": {
+      "main": [
+        [
+          {
+            "node": "Shape",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
