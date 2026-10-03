@@ -38,7 +38,7 @@ return array(
     'n8n' => array(
         // URL ของ webhook ที่ใช้ "ส่งข้อความออกไปหาลูกค้าทาง LINE" (workflow ChatDesk Manager - Push)
         // หมายเหตุ: ใช้ tunnel สาธารณะเพื่อให้agent/ข้อความวิ่งได้จากทุกที่; ภายในเครื่องใช้ host.docker.internal ก็ได้
-        'push_url' => cd_env('N8N_PUSH_URL', 'https://appeals-arts-deemed-moscow.trycloudflare.com/webhook/chatdesk-push'),
+        'push_url' => cd_env('N8N_PUSH_URL', 'https://andrew-sensor-competitive-annotation.trycloudflare.com/webhook/chatdesk-push'),
         'timeout'  => cd_env('N8N_TIMEOUT', 30),
         // รหัสลับที่ n8n ต้องส่งมาด้วยตอนยิงเข้า api/incoming.php (เว้นว่าง = ไม่ตรวจ)
         'secret'   => cd_env('N8N_SECRET', ''),
