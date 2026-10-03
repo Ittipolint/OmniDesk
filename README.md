@@ -31,6 +31,12 @@ IntelTech ┘                                                   ├─ Gemini / 
 | PHP runtime | `local/php/Dockerfile` | php:8.3-apache + pdo_pgsql |
 | Tunnels | `local/docker-compose.yml` + `regen-tunnels.ps1` | Cloudflare quick tunnel (n8n + web) |
 
+***** เข้าจาก Internet (Cloudflare tunnel) *****
+===============================================
+🛍️ https://crossing-cargo-philips-heating.trycloudflare.com/shopdee/
+💻 https://crossing-cargo-philips-heating.trycloudflare.com/inteltech/
+🖥️ https://crossing-cargo-philips-heating.trycloudflare.com/chatdesk/
+
 ### ช่องทาง (channels) และกลุ่มความรู้ (RAG groups)
 
 | channel | ใช้ที่ไหน | RAG groups |
